@@ -51,6 +51,7 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 |---|---|
 | feat: real-time AI job tracker + EC2 docs + protocol updates | `271289a` |
 | harden: rate limiting, health check, silent failure fixes, email safety | `25bb856` |
+| feat: live session inject + save-as-note endpoints | `efd0bf3` |
 
 ### Next Session — Where to Pick Up
 
