@@ -53,6 +53,7 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 | harden: rate limiting, health check, silent failure fixes, email safety | `25bb856` |
 | feat: live session inject + save-as-note endpoints | `efd0bf3` |
 | feat: AI analysis push notifications + push token registration | `2c9c9c8` |
+| fix: save-as-note and inject 404 — remove strict status filter | `c63679c` |
 
 ### Next Session — Where to Pick Up
 

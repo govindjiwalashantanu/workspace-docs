@@ -77,6 +77,7 @@ Overhauled the recording save flow, added AI analysis surfacing on meeting notes
 | feat: recording destination picker — note, meeting, inject | `1e0ece9` |
 | feat: AI analysis on meeting screen + push notifications | `0c68c9f` |
 | feat: Feed tab as primary screen — meetings/notes feed with global search | `ffa63d5` |
+| fix: review screen safe area + background recording chunk rotation | `53d0383` |
 
 ---
 
