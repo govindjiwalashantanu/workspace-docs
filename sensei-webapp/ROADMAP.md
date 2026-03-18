@@ -72,25 +72,18 @@ After these two features ship: **no new features until post-launch**. Focus shif
 
 Two external collaboration features. Building Share Link first (no new deps), Think Tank second.
 
-#### Share Link
+#### Share Link ✅ Shipped March 18, 2026
 A read-only public link to any notebook node. Anyone can view it. Registered sensei users can import it as a new standalone node.
 
-**User stories:** SL-1 through SL-7
-**Decisions:**
-- Any notebook node can be shared (accounts, opportunities, meetings, contacts, notes, POC guides)
-- Read-only for anyone without sensei account
-- Configurable expiry (1–365 days)
-- Import creates a brand-new standalone node — zero interference with existing workspace
-- View count tracked on the token
-
-**Scope:**
-- `ShareToken` Prisma model: `id`, `organizationId`, `nodeId`, `token` (64-char hex), `expiresAt`, `viewCount`, `createdAt`
-- `GET /share/[token]` — public page (no auth, clean UI)
-- `POST /api/notebook/[id]/share-link` — generate with expiry (owner only)
-- `DELETE /api/notebook/[id]/share-link` — revoke (owner only)
-- `GET /api/share/[token]` — returns node data for public page
-- `POST /api/notebook/import` — authenticated, imports shared node as new standalone
-- Share UI in notebook: copy link, view count, expiry, revoke button
+**Delivered:**
+- `ShareToken` Prisma model — 256-bit entropy token, configurable expiry, view count, cascade delete
+- `GET/POST/DELETE /api/notebook/[id]/share-link` — check/generate/revoke (owner only)
+- `GET /api/share/[token]` — public node data API (no auth required)
+- `POST /api/notebook/import` — authenticated import as new standalone node
+- `app/share/[token]/page.tsx` — clean public page with expired state
+- `useGetShareLink`, `useCreateShareLink`, `useRevokeShareLink` hooks
+- NotebookShareDialog extended with share link section (expiry picker, copy, revoke)
+- 26 new tests passing, Playwright visual verification done
 
 ---
 

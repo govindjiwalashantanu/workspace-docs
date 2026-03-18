@@ -50,14 +50,19 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 | Description | Hash |
 |---|---|
 | feat: real-time AI job tracker + EC2 docs + protocol updates | `271289a` |
+| harden: rate limiting, health check, silent failure fixes, email safety | `25bb856` |
 
 ### Next Session — Where to Pick Up
 
-**sensei-webapp MVP hardening (still outstanding):**
-1. Rate limiting on AI routes — not yet done
-2. Email/RESEND_API_KEY — code audit not done
-3. Health check endpoint — not yet done
-4. Silent AI failures audit — partially addressed (next-action/research return `{ created: 0 }` on LLM failure instead of error — still an issue)
+**sensei-webapp MVP hardening — all 4 items shipped ✅ (`25bb856`)**
+- Rate limiting: 200/hr per user on all 9 user-triggered AI routes
+- Email safety: all Resend calls try/caught, auth routes never crash on email failure
+- Health check: `GET /api/health` live
+- Silent failures: next-action/research now return 503/502, failJob() called on errors
+
+**Still needed on EC2 (config, not code):**
+- Set `RESEND_API_KEY` + `EMAIL_FROM` for emails to work
+- Set `AGENT_CRON_SECRET` + systemd timer for post-meeting agent
 
 **Other Claude session:** Working on Think Tank + Share Link (Phase 1)
 
