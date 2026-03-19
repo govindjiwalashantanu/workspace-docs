@@ -112,6 +112,7 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 | fix: GitHub Actions deploy — OIDC auth + temp SSH rule management | `e30fabf` |
 | revert: restore original 3-provider auth (Credentials + Google + Okta) | `361dc04` |
 | feat: Share Link — read-only public links for notebook nodes | `4bc986f` |
+| harden: rate limiting on chat+search, error boundary, config fix | `29da2ec` |
 
 ### Next Session — Where to Pick Up
 
