@@ -5,6 +5,59 @@ _Last updated: March 18, 2026_
 
 ---
 
+## Session: March 18, 2026 (continued) — Share Link, Pitch Deck, Mobile UX Fixes
+
+### Summary
+Shipped Share Link (Phase A), updated pitch deck for Joel Hanson VP meeting, fixed multiple mobile UX issues, added 404 debug logging to live session routes, tagged POC snapshots at source.
+
+### What Changed
+
+#### 1. Share Link (Phase A) — shipped, NOT yet committed
+**New files (untracked — need commit + push):**
+- `app/api/notebook/[id]/share-link/route.ts` — GET/POST/DELETE for share link management
+- `app/api/share/[token]/route.ts` — public read-only API (no auth)
+- `app/api/notebook/import/route.ts` — authenticated import of shared node
+- `app/share/[token]/page.tsx` — public share page
+- `app/api/auth/mobile-okta/` — mobile Okta PKCE auth (untracked)
+- `__tests__/api/share-link.test.ts`, `__tests__/lib/share-tokens.test.ts` — tests
+- `lib/tokens.ts` extended — `generateShareToken`, `verifyShareToken`
+- `proxy.ts` — `/share/` and `/api/share/` added to PUBLIC_PATHS
+
+**Modified (uncommitted):** NotebookShareDialog, AccountDetail, MeetingDetail, OpportunityDetail, lib/queries.ts (share link hooks)
+
+**Schema:** `ShareToken` model added to `prisma/schema.prisma` (not yet pushed to production DB)
+
+#### 2. Pitch Deck Updates
+- Added FY27 Alignment slide (slide 03) — maps senSEi to Joel's 4 priorities
+- Added Presales^AI Deep Dive slide (slide 04) — Joel's targets, tactics, 3 asks
+- Mapped to $2B→$5B→$10B GTM 3-year strategy
+- 3 asks: (1) approve AI tool, (2) 30-day pilot 30 SEs, (3) connect with Okta IT for infra
+- Human Voice Reviewer persona added to WORKING_PROTOCOL.md
+- All em dashes removed; AI tells removed
+- Agenda updated to 13 slides
+
+#### 3. Live Session Bug Fixes
+- `LiveSessionContext.tsx` — `setRecording(false)` moved to `finally` block in `stopSession` — prevents auto-save from firing on unmount when mic stop throws
+- `save-as-note/route.ts` + `inject/route.ts` — added debug logging for 404 diagnosis (logs session ID, org ID, checks if session exists with wrong org)
+
+#### 4. POC Snapshot Tagging
+- `poc/save-version/route.ts` — new snapshots now get `NodeProperty { key: 'source', value: 'poc_snapshot' }` at creation
+- Mobile `feed-filter.ts` — excludes nodes with `source: poc_snapshot` property + legacy title-based filter (title starts with "POC")
+
+#### 5. Mobile UX Fixes
+- `recording.tsx` — RECORDING badge no longer behind notch (dynamic `paddingTop: insets.top + 12`); controls respect home indicator
+- `_layout.tsx` — tab bar height 60 → 72 (Record icon + label no longer overlap)
+- `feed/index.tsx` — header safe area fixed (dynamic insets); "Analysing…" spinner capped to today's meetings only
+- `live/save.tsx` — safe area padding on save screen
+
+### Next Session — Where to Pick Up
+1. **404 debug:** Check `pm2 logs sensei-webapp | grep "\[save-as-note\]\|\[inject\]"` after reproducing — will show org ID mismatch
+2. **Share Link commit + push:** Needs owner approval. Files are uncommitted. Also needs `prisma db push` on EC2 for ShareToken table
+3. **Think Tank (Phase B):** Next feature — needs `@liveblocks/client @liveblocks/react @liveblocks/node` + DB models
+4. **Pitch deck:** Ready to present to Joel Hanson
+
+---
+
 ## Session: March 18, 2026 — AI Job Tracker, EC2 Documentation, Protocol Updates
 
 ### Summary
@@ -56,6 +109,7 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 | fix: save-as-note and inject 404 — remove strict status filter | `c63679c` |
 | feat: Okta-only auth + Terraform tenant configuration | `97c86af` |
 | feat: custom domain, branded login page, mobile PKCE auth | `13dc2a9` |
+| fix: GitHub Actions deploy — OIDC auth + temp SSH rule management | `e30fabf` |
 
 ### Next Session — Where to Pick Up
 
@@ -65,9 +119,15 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 - Health check: `GET /api/health` live
 - Silent failures: next-action/research now return 503/502, failJob() called on errors
 
-**Still needed on EC2 (config, not code):**
-- Set `RESEND_API_KEY` + `EMAIL_FROM` for emails to work
-- Set `AGENT_CRON_SECRET` + systemd timer for post-meeting agent
+**EC2 deployed ✅** — all commits live, GitHub Actions auto-deploys via OIDC
+
+**Still needed:**
+- Add DNS CNAME for `login.se-n-sei.com` → `terraform output dns_record` in `terraform/okta/`
+- After DNS verified: update `OKTA_ISSUER=https://login.se-n-sei.com` in EC2 `.env`
+- Set `RESEND_API_KEY` + `EMAIL_FROM` for email delivery
+- Okta login error (stale session): clear cookies for `okta.se-n-sei.com` in browser and retry
+- Rotate Okta API token — it appeared in conversation transcript
+- IAM role created: `sensei-github-deploy` (OIDC trust for this repo, minimal EC2 sg perms)
 
 **Other Claude session:** Working on Think Tank + Share Link (Phase 1)
 
