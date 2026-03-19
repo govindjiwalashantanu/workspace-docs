@@ -54,6 +54,8 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 | feat: live session inject + save-as-note endpoints | `efd0bf3` |
 | feat: AI analysis push notifications + push token registration | `2c9c9c8` |
 | fix: save-as-note and inject 404 — remove strict status filter | `c63679c` |
+| feat: Okta-only auth + Terraform tenant configuration | `97c86af` |
+| feat: custom domain, branded login page, mobile PKCE auth | `13dc2a9` |
 
 ### Next Session — Where to Pick Up
 

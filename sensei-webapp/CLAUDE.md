@@ -67,7 +67,13 @@ Every API route calls `requireAuth()` from `lib/auth-helpers.ts`, which returns 
 
 ### Authentication
 
-NextAuth v4 with three providers: **Okta** (enterprise OIDC), **Google** (OAuth with calendar scopes), and **Credentials** (email, for dev/fallback). Sessions use JWT strategy.
+**Okta-only.** NextAuth v4 with a single Okta OIDC provider. Credentials and Google providers removed.
+
+- Okta tenant: `sen-sei.okta.com` (custom domain pending: `login.se-n-sei.com`)
+- JIT provisioning: users upserted on first Okta sign-in
+- Mobile: PKCE flow via `POST /api/auth/mobile-okta` (accepts Okta ID token, returns sensei JWT)
+- Terraform config: `terraform/okta/` — manages app, users, domain, brand
+- Cross-app access (CAA): add `token_exchange` grant to app + custom auth server when needed (no rework required)
 
 ### Testing
 
