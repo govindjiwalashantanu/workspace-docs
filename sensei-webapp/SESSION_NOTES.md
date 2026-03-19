@@ -111,6 +111,7 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 | feat: custom domain, branded login page, mobile PKCE auth | `13dc2a9` |
 | fix: GitHub Actions deploy — OIDC auth + temp SSH rule management | `e30fabf` |
 | revert: restore original 3-provider auth (Credentials + Google + Okta) | `361dc04` |
+| feat: Share Link — read-only public links for notebook nodes | `4bc986f` |
 
 ### Next Session — Where to Pick Up
 
@@ -125,7 +126,7 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 **Still needed:**
 - Add DNS CNAME for `login.se-n-sei.com` → `terraform output dns_record` in `terraform/okta/`
 - After DNS verified: update `OKTA_ISSUER=https://login.se-n-sei.com` in EC2 `.env`
-- Set `RESEND_API_KEY` + `EMAIL_FROM` for email delivery
+- ~~Set `RESEND_API_KEY` + `EMAIL_FROM`~~ ✅ Done — `noreply@se-n-sei.com` verified and sending
 - Okta login error (stale session): clear cookies for `okta.se-n-sei.com` in browser and retry
 - Rotate Okta API token — it appeared in conversation transcript
 - IAM role created: `sensei-github-deploy` (OIDC trust for this repo, minimal EC2 sg perms)
