@@ -117,16 +117,24 @@ All secrets live in `.env.local` on the EC2 instance — never in git.
 | SSL | Certbot (Let's Encrypt) |
 | Domain | okta.se-n-sei.com |
 | Database | Supabase PostgreSQL (pooled via pgbouncer) |
-| CI/CD | GitHub Actions → SSH deploy on push to main |
+| CI/CD | Manual — SSH in and pull (GitHub Actions workflow removed) |
 
-### Deploy flow
+### Deploy flow (manual)
 
+```bash
+# 1. Open port 22 temporarily via AWS console or CLI
+# 2. SSH in:
+ssh -i ~/.ssh/sensei-ec2-key.pem ubuntu@34.225.127.113
+cd /var/www/sensei-webapp
+git pull origin main
+npm ci --production=false
+npm run build
+pm2 restart sensei-webapp --update-env
+# 3. Close port 22
 ```
-git push main
-→ GitHub Actions (.github/workflows/deploy.yml)
-→ SSH into EC2 (EC2_HOST + EC2_SSH_KEY secrets)
-→ git pull → npm ci → npm run build → pm2 restart sensei-webapp
-```
+
+GitHub Actions CI/CD was removed (March 2026) when moving off EC2.
+Will be re-configured when moving to Okta Vercel.
 
 ### On-server secrets
 

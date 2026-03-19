@@ -111,6 +111,7 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 | feat: custom domain, branded login page, mobile PKCE auth | `13dc2a9` |
 | fix: GitHub Actions deploy — OIDC auth + temp SSH rule management | `e30fabf` |
 | revert: restore original 3-provider auth (Credentials + Google + Okta) | `361dc04` |
+| chore: remove EC2 GitHub Actions deploy workflow | `4f86154` |
 | feat: Share Link — read-only public links for notebook nodes | `4bc986f` |
 | harden: rate limiting on chat+search, error boundary, config fix | `29da2ec` |
 
