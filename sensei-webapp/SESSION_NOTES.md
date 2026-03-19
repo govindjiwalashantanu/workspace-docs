@@ -110,6 +110,7 @@ Built real-time AI job tracking replacing NotificationBell. Documented EC2 archi
 | feat: Okta-only auth + Terraform tenant configuration | `97c86af` |
 | feat: custom domain, branded login page, mobile PKCE auth | `13dc2a9` |
 | fix: GitHub Actions deploy — OIDC auth + temp SSH rule management | `e30fabf` |
+| revert: restore original 3-provider auth (Credentials + Google + Okta) | `361dc04` |
 
 ### Next Session — Where to Pick Up
 

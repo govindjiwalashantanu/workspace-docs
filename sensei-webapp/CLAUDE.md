@@ -67,13 +67,9 @@ Every API route calls `requireAuth()` from `lib/auth-helpers.ts`, which returns 
 
 ### Authentication
 
-**Okta-only.** NextAuth v4 with a single Okta OIDC provider. Credentials and Google providers removed.
+NextAuth v4 with three providers: **Okta** (enterprise OIDC, `goals.oktapreview.com`), **Google** (OAuth with calendar scopes), and **Credentials** (email/password).
 
-- Okta tenant: `sen-sei.okta.com` (custom domain pending: `login.se-n-sei.com`)
-- JIT provisioning: users upserted on first Okta sign-in
-- Mobile: PKCE flow via `POST /api/auth/mobile-okta` (accepts Okta ID token, returns sensei JWT)
-- Terraform config: `terraform/okta/` — manages app, users, domain, brand
-- Cross-app access (CAA): add `token_exchange` grant to app + custom auth server when needed (no rework required)
+**Note:** A new Okta tenant (`sen-sei.okta.com`) has been provisioned via Terraform (`terraform/okta/`) with a custom domain (`login.se-n-sei.com`, DNS pending). The auth was temporarily switched to Okta-only but reverted. When ready to switch, the infrastructure is already in place — just update `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`, `OKTA_ISSUER` in EC2 `.env` and restore the Okta-only `lib/auth.ts`.
 
 ### Testing
 
