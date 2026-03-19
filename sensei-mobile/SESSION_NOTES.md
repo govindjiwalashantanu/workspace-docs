@@ -78,6 +78,7 @@ Overhauled the recording save flow, added AI analysis surfacing on meeting notes
 | feat: AI analysis on meeting screen + push notifications | `0c68c9f` |
 | feat: Feed tab as primary screen — meetings/notes feed with global search | `ffa63d5` |
 | fix: review screen safe area + background recording chunk rotation | `53d0383` |
+| design: light theme — direction B (matches sensei-webapp) | `2387ca1` |
 
 ---
 
