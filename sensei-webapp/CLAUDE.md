@@ -12,17 +12,27 @@ Read it before starting any task. Every feature must clear the full persona pipe
 ## Commands
 
 ```bash
-npm run dev          # Development server on port 3000
-npm run build        # Production build
-npm run lint         # ESLint
-npm test             # Run tests (Vitest)
-npm run test:ui      # Interactive Vitest UI
+npm run dev           # Development server on port 3000
+npm run build         # Production build
+npm run lint          # ESLint
+npm test              # Run tests in watch mode (Vitest)
+npm run test:ui       # Interactive Vitest UI
 npm run test:coverage # Coverage report
+npx vitest run        # Run all unit tests once (CI mode)
+npx tsc --noEmit      # Type-check without emitting
 ```
 
 Run a single test file:
 ```bash
 npx vitest run __tests__/path/to/file.test.ts
+```
+
+Run E2E / Playwright tests:
+```bash
+npx playwright test                   # All projects (setup + e2e + smoke)
+npx playwright test --project=smoke   # Unauthenticated smoke tests only
+npx playwright test --project=e2e     # Authenticated E2E tests
+npx playwright test tests/notebook.spec.ts  # Single spec file
 ```
 
 ## Architecture
@@ -42,7 +52,14 @@ npx vitest run __tests__/path/to/file.test.ts
   - `prisma.ts` — Prisma client singleton
   - `encrypt.ts` — AES-256-GCM encryption for stored secrets
   - `calendar-sync.ts` / `gcal.ts` — Google Calendar integration
-- `prisma/schema.prisma` — 14 models covering auth, multi-tenancy, boards, notebook, features, integrations
+  - `litellm-client.ts` — Server-side LLM calls (used in API routes; see LiteLLM proxy note below)
+  - `litellm-browser.ts` — Browser-side LLM calls (only when `NEXT_PUBLIC_LITELLM_BASE_URL` is defined)
+  - `ai-guard.ts` — Prompt injection / jailbreak detection applied before AI calls
+  - `audit.ts` — `logAudit()` helper for key mutations (attached to org + user)
+  - `health-score.ts` — Deal health score calculation
+  - `ai-jobs.ts` — Background AI job tracking (feeds the notification bell in the UI)
+  - `logger.ts` — Error reporting to `/api/errors` with deduplication
+- `prisma/schema.prisma` — Models covering auth, multi-tenancy, boards, notebook, features, integrations, AI chat history (`Conversation`, `ChatMessage`), background jobs (`AIJob`), error tracking (`ErrorLog`), and live session coaching (`LiveSession`, `AgentSuggestion`)
 - `types/index.ts` — Core domain types
 - `constants/index.ts` — Pipeline stages, meeting templates, priorities
 - `middleware.ts` — NextAuth protection + extracts subdomain into `x-org-context` header
@@ -69,11 +86,24 @@ Every API route calls `requireAuth()` from `lib/auth-helpers.ts`, which returns 
 
 NextAuth v4 with three providers: **Okta** (enterprise OIDC, `goals.oktapreview.com`), **Google** (OAuth with calendar scopes), and **Credentials** (email/password).
 
-**Note:** A new Okta tenant (`sen-sei.okta.com`) has been provisioned via Terraform (`terraform/okta/`) with a custom domain (`login.se-n-sei.com`, DNS pending). The auth was temporarily switched to Okta-only but reverted. When ready to switch, the infrastructure is already in place — just update `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`, `OKTA_ISSUER` in EC2 `.env` and restore the Okta-only `lib/auth.ts`.
+**Note:** A new Okta tenant (`sen-sei.okta.com`) has been provisioned via Terraform (`terraform/okta/`) with a custom domain (`login.se-n-sei.com`, DNS pending). When ready to switch, update `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`, `OKTA_ISSUER` in Vercel env vars and restore the Okta-only `lib/auth.ts`.
+
+### Styling
+
+All styles live in a single file: `app/globals-redesign.css`. Do not create additional CSS files or CSS modules; add styles there.
+
+### AI Services
+
+Three AI services are in use:
+- **LiteLLM proxy** (`llm.atko.ai`) — primary LLM calls; see the LiteLLM proxy note in the Deployment section for the server-vs-browser split
+- **Groq** (`GROQ_API_KEY`) — Whisper transcription for live session audio
+- **Tavily** — web search used by AI agents
 
 ### Testing
 
-Vitest with `happy-dom` environment and MSW for API mocking. Global mocks for NextAuth and IDPWizard are in `vitest.setup.ts`. Test files live under `__tests__/`.
+**Unit/API tests:** Vitest with `happy-dom` environment and MSW for API mocking. Global mocks for NextAuth and IDPWizard are in `vitest.setup.ts`. Test files live under `__tests__/`.
+
+**E2E tests:** Playwright with three projects — `setup` (auth state), `e2e` (authenticated flows), `smoke` (unauthenticated). Auth state is reused across e2e tests via `playwright/.auth/`. The CI workflow runs smoke tests only after every Vercel deployment; full e2e runs on a daily schedule.
 
 ### Path Alias
 
@@ -82,27 +112,31 @@ Vitest with `happy-dom` environment and MSW for API mocking. Global mocks for Ne
 ### Key Environment Variables
 
 ```
-DATABASE_URL          # Pooled PostgreSQL connection (pgbouncer)
-DIRECT_URL            # Direct PostgreSQL connection (for migrations)
-NEXTAUTH_URL          # https://okta.se-n-sei.com (production)
+DATABASE_URL                   # Pooled PostgreSQL connection (pgbouncer)
+DIRECT_URL                     # Direct PostgreSQL connection (for migrations)
+NEXTAUTH_URL                   # https://sensei-webapp-eta.vercel.app (production)
 NEXTAUTH_SECRET
 OKTA_CLIENT_ID, OKTA_CLIENT_SECRET, OKTA_ISSUER
 GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-RESEND_API_KEY        # Email delivery (password reset, verification)
-EMAIL_FROM            # e.g. "senSEi <hello@se-n-sei.com>"
-LITELLM_API_KEY       # Internal Okta LiteLLM proxy key
-LITELLM_BASE_URL      # https://llm.atko.ai
-LITELLM_MODEL         # claude-4-6-sonnet
-GROQ_API_KEY          # Whisper transcription
-ENCRYPTION_KEY        # 64-char hex, AES-256-GCM for stored secrets
-AGENT_CRON_SECRET     # Auth token for cron-triggered agent endpoints
+RESEND_API_KEY                 # Email delivery (password reset, verification)
+EMAIL_FROM                     # e.g. "senSEi <hello@se-n-sei.com>"
+LITELLM_API_KEY                # Internal Okta LiteLLM proxy key (server-side, unused from Vercel due to IP restriction)
+LITELLM_BASE_URL               # https://llm.atko.ai
+LITELLM_MODEL                  # claude-4-6-sonnet
+NEXT_PUBLIC_LITELLM_API_KEY    # Vercel only — NOT in .env.local. Browser-side fallback for Vercel deployments.
+NEXT_PUBLIC_LITELLM_BASE_URL   # Vercel only — NOT in .env.local. See LiteLLM note below.
+NEXT_PUBLIC_LITELLM_MODEL      # Vercel only — NOT in .env.local.
+GROQ_API_KEY                   # Whisper transcription
+ENCRYPTION_KEY                 # 64-char hex, AES-256-GCM for stored secrets
+AGENT_CRON_SECRET              # Auth token for cron-triggered agent endpoints
+SUPER_ADMIN_EMAIL              # Email address of the platform super admin (gates /admin section)
 ```
 
-All secrets live in `.env.local` on the EC2 instance — never in git.
+All secrets are stored as Vercel environment variables — never in git.
 
 ---
 
-## Deployment — EC2 (Production)
+## Deployment — Vercel (Production)
 
 **This is an internal Okta enterprise app. All data belongs to Okta.**
 
@@ -110,59 +144,65 @@ All secrets live in `.env.local` on the EC2 instance — never in git.
 
 | Component | Detail |
 |---|---|
-| Server | AWS EC2 t3.medium, us-east-1 |
-| OS | Ubuntu 22.04 LTS |
-| Process manager | PM2 (`ecosystem.config.js`) |
-| Reverse proxy | Nginx → localhost:3000 |
-| SSL | Certbot (Let's Encrypt) |
-| Domain | okta.se-n-sei.com |
+| Hosting | Vercel — `okta-solutions-engineering` team |
+| Project | `sensei-webapp` → `sensei-webapp-eta.vercel.app` |
+| Domain | `okta.se-n-sei.com` (DNS: Vercel nameservers, A record pending attachment) |
 | Database | Supabase PostgreSQL (pooled via pgbouncer) |
-| CI/CD | Manual — SSH in and pull (GitHub Actions workflow removed) |
+| CI/CD | Vercel auto-deploys on push to `main` |
 
-### Deploy flow (manual)
+### Deploy flow
 
-```bash
-# 1. Open port 22 temporarily via AWS console or CLI
-# 2. SSH in:
-ssh -i ~/.ssh/sensei-ec2-key.pem ubuntu@34.225.127.113
-cd /var/www/sensei-webapp
-git pull origin main
-npm ci --production=false
-npm run build
-pm2 restart sensei-webapp --update-env
-# 3. Close port 22
-```
-
-GitHub Actions CI/CD was removed (March 2026) when moving off EC2.
-Will be re-configured when moving to Okta Vercel.
-
-### On-server secrets
-
-`.env.local` at `/var/www/sensei-webapp/.env.local` holds all secrets.
-PM2 inherits the environment — never put secrets in `ecosystem.config.js`.
-
-### Docker
-Docker is available on the EC2 instance. A `Dockerfile` exists for containerised deployment (multi-stage, Node 22 slim, non-root user). Can be used for local dev parity or future container orchestration.
-
-### Useful commands on EC2
+Push to `main` → Vercel builds and deploys automatically.
 
 ```bash
-pm2 status                    # Check app status
-pm2 logs sensei-webapp        # Tail logs
-pm2 restart sensei-webapp     # Restart
-sudo systemctl status nginx   # Check Nginx
-sudo certbot renew            # Renew SSL cert
+git push origin main   # triggers Vercel build
 ```
+
+To add or update environment variables:
+```bash
+vercel env add VAR_NAME production --scope okta-solutions-engineering
+```
+
+### Schema changes
+
+When the Prisma schema changes, run `prisma db push` locally to apply to the shared Supabase database:
+
+```bash
+npx prisma db push
+npx prisma generate
+```
+
+Vercel's build runs `prisma generate` automatically during deployment.
+
+### AI features — LiteLLM proxy
+
+The Okta internal LiteLLM proxy (`llm.atko.ai`) behaves differently depending on context:
+
+| Context | How to call LiteLLM | Why |
+|---|---|---|
+| **localhost (dev)** | Server-side only | Server is on Okta network → 200. Browser gets 403 — Okta enterprise proxy blocks browser `Origin` header requests. Do NOT set `NEXT_PUBLIC_LITELLM_*` in `.env.local`. |
+| **Vercel (production)** | Browser-side via `NEXT_PUBLIC_LITELLM_*` | Vercel server is outside Okta network → 403. User's browser IS on Okta network → 200. |
+
+**Local dev:** `NEXT_PUBLIC_LITELLM_*` vars are intentionally absent from `.env.local`. The server-side route handles everything.
+
+**Vercel:** `NEXT_PUBLIC_LITELLM_*` vars are set in Vercel env vars. `DeploymentGuide.tsx` detects them and calls LiteLLM from the browser. If the vars are not set, it falls back to the server route (which will fail with 403 on Vercel).
+
+**Client-side LLM helper:** `lib/litellm-browser.ts` — used only when `NEXT_PUBLIC_LITELLM_BASE_URL` is defined.
 
 ### Agent cron jobs
 
-The post-meeting agent (`/api/agent/post-meeting`) should be triggered
-by a systemd timer or cron job on EC2, not Vercel cron.
-Set `AGENT_CRON_SECRET` in `.env.local` and add a cron entry:
-```bash
-*/5 * * * * curl -s -X POST https://okta.se-n-sei.com/api/agent/post-meeting \
-  -H "Authorization: Bearer $AGENT_CRON_SECRET"
+The post-meeting agent (`/api/agent/post-meeting`) is triggered via cron. Configure in `vercel.json` or use an external cron service:
+
+```json
+{
+  "crons": [{
+    "path": "/api/agent/post-meeting",
+    "schedule": "*/5 * * * *"
+  }]
+}
 ```
+
+Set `AGENT_CRON_SECRET` in Vercel env vars. The endpoint validates this header.
 
 ---
 

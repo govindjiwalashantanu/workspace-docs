@@ -8,9 +8,10 @@ This repo is the single source of truth for all context, architecture, protocols
 
 | Project | Repo | Stack | Status |
 |---|---|---|---|
-| **sensei-webapp** | `govindjiwalashantanu/sensei-webapp` | Next.js 16, Prisma, PostgreSQL | Active |
-| **echo-backend** | `govindjiwalashantanu/echo-backend` | Next.js 16, Prisma, PostgreSQL | Active |
-| **echo-mobile** | `govindjiwalashantanu/echo-mobile` | Expo, React Native | Active |
+| **sensei-webapp** | [govindjiwalashantanu/sensei-webapp](https://github.com/govindjiwalashantanu/sensei-webapp) | Next.js, Prisma, PostgreSQL, Vercel | Active |
+| **sensei-mobile** | [govindjiwalashantanu/sensei-mobile](https://github.com/govindjiwalashantanu/sensei-mobile) | Expo, React Native | Active |
+| **echo-backend** | [govindjiwalashantanu/echo-backend](https://github.com/govindjiwalashantanu/echo-backend) | Next.js, Prisma, PostgreSQL | Active |
+| **echo-mobile** | [govindjiwalashantanu/echo-mobile](https://github.com/govindjiwalashantanu/echo-mobile) | Expo, React Native | Active |
 
 ---
 
@@ -20,7 +21,7 @@ This repo is the single source of truth for all context, architecture, protocols
 workspace-docs/
 ├── WORKING_PROTOCOL.md        # Rules that apply to all projects — read first every session
 ├── sensei-webapp/
-│   ├── CLAUDE.md              # Architecture, deployment (EC2), env vars, key patterns
+│   ├── CLAUDE.md              # Architecture, deployment (Vercel), env vars, key patterns
 │   ├── ROADMAP.md             # Feature roadmap — completed, in-progress, backlog
 │   └── SESSION_NOTES.md       # Session history — what was built, decisions made, next steps
 ├── echo-backend/
@@ -63,7 +64,7 @@ gh auth login
 ### 2. Install Claude Code
 
 ```bash
-npm install -g @anthropic/claude-code
+npm install -g @anthropic-ai/claude-code
 ```
 
 ### 3. Clone this repo first
@@ -79,6 +80,7 @@ Read `WORKING_PROTOCOL.md` before anything else.
 ```bash
 # All repos into ~/Documents/ (matches the paths in CLAUDE.md files)
 git clone https://github.com/govindjiwalashantanu/sensei-webapp.git ~/Documents/sensei-webapp
+git clone https://github.com/govindjiwalashantanu/sensei-mobile.git ~/Documents/sensei-mobile
 git clone https://github.com/govindjiwalashantanu/echo-backend.git ~/Documents/echo-backend
 git clone https://github.com/govindjiwalashantanu/echo-mobile.git ~/Documents/echo-mobile
 ```
@@ -86,9 +88,10 @@ git clone https://github.com/govindjiwalashantanu/echo-mobile.git ~/Documents/ec
 ### 5. Install dependencies
 
 ```bash
-cd ~/Documents/sensei-webapp && npm install
-cd ~/Documents/echo-backend  && npm install
-cd ~/Documents/echo-mobile   && npm install
+cd ~/Documents/sensei-webapp  && npm install
+cd ~/Documents/sensei-mobile  && npm install
+cd ~/Documents/echo-backend   && npm install
+cd ~/Documents/echo-mobile    && npm install
 ```
 
 ### 6. Environment variables
@@ -133,10 +136,16 @@ DEEPGRAM_API_KEY (optional)
 ASSEMBLYAI_API_KEY (optional)
 ```
 
+**sensei-mobile** needs:
+```
+EXPO_PUBLIC_API_URL   # e.g. https://okta.se-n-sei.com (sensei-webapp backend)
+```
+
 **echo-mobile** needs:
 ```
 EXPO_PUBLIC_API_URL   # e.g. https://echo.your-domain.com
 ```
+
 
 ### 7. Database setup
 
@@ -157,8 +166,12 @@ cd ~/Documents/sensei-webapp && npm run dev      # http://localhost:3000
 # echo-backend
 cd ~/Documents/echo-backend && npm run dev       # http://localhost:3000
 
+# sensei-mobile
+cd ~/Documents/sensei-mobile && npm start        # Expo dev server
+
 # echo-mobile
 cd ~/Documents/echo-mobile && npm start          # Expo dev server
+
 ```
 
 ---
@@ -179,14 +192,13 @@ cd ~/Documents/echo-mobile && npm start          # Expo dev server
 
 ---
 
-## EC2 Production (sensei-webapp)
+## Production (sensei-webapp)
 
-- **URL:** https://okta.se-n-sei.com
-- **Instance:** t3.medium, us-east-1
-- **SSH:** `ssh -i ~/.ssh/sensei-ec2-key.pem ubuntu@<ELASTIC_IP>`
-- **Deploy:** push to `main` → GitHub Actions auto-deploys via SSH
+- **URL:** https://okta.se-n-sei.com (DNS pending cut-over; currently https://sensei-webapp-eta.vercel.app)
+- **Hosting:** Vercel — `okta-solutions-engineering` team
+- **Deploy:** push to `main` → Vercel auto-deploys
 
-See `sensei-webapp/CLAUDE.md` for full deployment architecture.
+See `sensei-webapp/CLAUDE.md` for full deployment architecture, env vars, and LiteLLM proxy notes.
 
 ---
 
