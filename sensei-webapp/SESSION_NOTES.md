@@ -35,6 +35,13 @@ _Last updated: March 23, 2026_
 - `npx prisma db push` confirmed — DB has `AuditLog`, `notificationPrefs`, `Feature.userId` restored
 - Consider adding `GROQ_API_KEY` to Vercel env docs/runbook so it's clear this is the transcription key
 
+**LiteLLM server-side fix — decision pending (March 24, 2026)**
+Browser-side workaround (`NEXT_PUBLIC_LITELLM_*`) is in place for pilot but exposes API key in bundle and only covers `deployment-guide`. Decision needed on proper fix before scaling:
+1. Whitelist Vercel IPs in `llm.atko.ai` — needs Okta IT
+2. Vercel Static Outbound IPs — ~$50/mo, one IP to whitelist
+3. Relay proxy on Okta network — EC2 nano/Fly.io forwarding to `llm.atko.ai`
+See `CLAUDE.md` → AI features — LiteLLM proxy for full breakdown.
+
 ---
 
 ## Session: March 22, 2026 — Chat History → Left Sidebar

@@ -176,18 +176,26 @@ Vercel's build runs `prisma generate` automatically during deployment.
 
 ### AI features — LiteLLM proxy
 
-The Okta internal LiteLLM proxy (`llm.atko.ai`) behaves differently depending on context:
+The Okta internal LiteLLM proxy (`llm.atko.ai`) only accepts requests from inside the Okta corporate network. Vercel servers are outside that network → 403.
 
 | Context | How to call LiteLLM | Why |
 |---|---|---|
-| **localhost (dev)** | Server-side only | Server is on Okta network → 200. Browser gets 403 — Okta enterprise proxy blocks browser `Origin` header requests. Do NOT set `NEXT_PUBLIC_LITELLM_*` in `.env.local`. |
-| **Vercel (production)** | Browser-side via `NEXT_PUBLIC_LITELLM_*` | Vercel server is outside Okta network → 403. User's browser IS on Okta network → 200. |
+| **localhost (dev)** | Server-side only | Server is on Okta network → 200. Do NOT set `NEXT_PUBLIC_LITELLM_*` in `.env.local`. |
+| **Vercel (production — pilot workaround)** | Browser-side via `NEXT_PUBLIC_LITELLM_*` | Vercel server gets 403. SE's browser is on Okta network → 200. |
 
-**Local dev:** `NEXT_PUBLIC_LITELLM_*` vars are intentionally absent from `.env.local`. The server-side route handles everything.
+**Current state (pilot workaround):** `NEXT_PUBLIC_LITELLM_*` vars set in Vercel. `DeploymentGuide.tsx` calls LiteLLM from the browser. `lib/litellm-browser.ts` is the client-side helper. **Only `deployment-guide` uses this pattern** — the remaining 8 AI routes (`next-action`, `research`, `analyze`, `analyze-state`, `analyze-com`, `okta-advisor`, `stakeholder-map`, `meeting-prep`) still call server-side and will 403 on Vercel.
 
-**Vercel:** `NEXT_PUBLIC_LITELLM_*` vars are set in Vercel env vars. `DeploymentGuide.tsx` detects them and calls LiteLLM from the browser. If the vars are not set, it falls back to the server route (which will fail with 403 on Vercel).
+**Known issue:** `NEXT_PUBLIC_LITELLM_API_KEY` is exposed in the browser bundle. Rotate after pilot ends.
 
-**Client-side LLM helper:** `lib/litellm-browser.ts` — used only when `NEXT_PUBLIC_LITELLM_BASE_URL` is defined.
+**Proper fix — options evaluated (March 2026, decision pending):**
+
+| Option | How | Pro | Con |
+|---|---|---|---|
+| **1. Whitelist Vercel IPs** | Ask Okta IT to add Vercel's outbound CIDR to `llm.atko.ai` allowlist | No code changes, no infra | Large/changing IP range; needs Okta IT |
+| **2. Vercel Static Outbound IPs** | Enable static IPs on Vercel Pro — one fixed IP to whitelist | Clean, one IP, fully server-side | ~$50/mo add-on |
+| **3. Relay proxy on Okta network** | Small server (EC2 nano/Fly.io) on Okta network forwarding `/v1/chat/completions` to `llm.atko.ai`; Vercel calls relay | Works today, no key exposure | Extra infra to maintain |
+
+**Next action:** Pick one option and implement before expanding beyond pilot.
 
 ### Agent cron jobs
 
