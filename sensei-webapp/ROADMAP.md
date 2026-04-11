@@ -4,6 +4,90 @@
 
 ## ✅ Completed
 
+### Patent IDF — April 8–11, 2026
+23-innovation Invention Disclosure Form complete (`PATENT_IDF.md`). All sections filled including dates, public disclosure, prior art (verified — all Gemini patent numbers confirmed hallucinated, competitive product analysis accurate), defensibility tier analysis, draft claim language for Innovations 3 + 8, two-application filing strategy. Supporting files: `PATENT_PRIOR_ART_SEARCH.md`, `PATENT_PRIOR_ART_SEARCH_V2.md`, `PATENT_DISCLOSURE.md`. Ready to route to Okta IP counsel for provisional filing.
+
+### Patent Demo Video — April 8, 2026
+2:31 Remotion video (`public/demos/patent-demo.mp4`, 18MB) covering Innovations 1–4. TTS audio via LiteLLM, paragraph timings silence-detected with ffprobe. Accessible at `/admin/patent-demo` (superadmin only) with video player, download link, and 4 innovation summary cards.
+
+### GitHub Migration to atko-presales/sensei — April 10, 2026
+Repo created at `atko-presales/sensei` via Terminus. Remote added as `okta`. `public/demos/*.mp4` (206MB) removed from git + gitignored. Push pending OCM setup.
+
+### Sidebar Z-Index Fix — April 10, 2026
+`position: relative; z-index: 10` added to `.sidebar-wrap` in `globals-redesign.css`. Content area stacking context was capturing pointer events over sidebar nav items on complex admin pages.
+
+### Seed Demo Data (Waters + BMC) — April 7, 2026
+`POST /api/seed-demo-data` seeds two real deal examples (Waters OCI + Boston Medical Center - BMC) with every AI-generated field pre-populated — transcripts, CoM + evidence, BV Slides, State Analysis (HTML + Mermaid), TechQual, presales, health score, meeting summaries/problems/nextSteps/follow-ups/prep/SFDC drafts, accountSnapshot, trackingItems. 14 board cards across all 5 columns. After seed: navigates to first opportunity + fires onboarding tour. `DELETE` removes all tagged nodes. 2319 passing.
+
+### Demo Library + Liquid Glass UI — April 5, 2026
+`app/demos/page.tsx` rewritten with liquid glass design (animated orbs, backdrop-filter blur, dark theme). 9 acts rendered and stitched in correct narrative order as `01-the-pitch.mp4` → `09-the-business-case.mp4` + `sensei-full-demo.mp4` (13:57). Audio/script files renamed to match narrative order throughout Remotion codebase.
+
+### Executive Meeting Deck — April 7, 2026
+`app/execmeeting2/page.tsx` — public 9-slide executive deck with embedded full demo video, integrations roadmap (Salesforce/Gong/Zoom/Calendar/Slack/MCP), FY27 alignment, $3.3M business case, 30-SE pilot ask. Deployed at `/execmeeting2`. Used for Joel Hanson (VP Presales) briefing.
+
+### AI JSON Parsing Fix — April 6, 2026
+`parseLiteLLMJson` in `lib/litellm-client.ts` replaced greedy regex with balanced-brace walker — fixes "Failed to parse AI response" errors when Claude appends trailing text after closing JSON brace. `analyze-note` now falls back to `properties.transcript` when `node.content` is sparse.
+
+### Live Okta OIDC Config (No Restart) — April 4, 2026
+`lib/auth-config-cache.ts` — 60s TTL cache for Okta OIDC settings. `buildAuthOptions()` factory in `lib/auth.ts` fetches live config from DB on each auth event. Admin → Identity Provider page allows switching Okta tenant without code change or server restart. Source badge shows DB vs env var fallback.
+
+### Architecture Diagrams in State Analysis — March 31, 2026
+Added Mermaid-based architecture diagram section to the Current / Future State tab. AI now generates `graph LR` Mermaid diagrams alongside the existing text descriptions. Rendered as clean SVG with a toggle to "Edit source" for manual customization. `ArchitectureDiagram` component lazy-loads mermaid, handles syntax errors gracefully, and saves via `updateProp`. 1961 passing.
+
+### Sales Intelligence Layer — March 31, 2026
+6 new intelligence extractions from existing data. `computeCloseProbability()` combines 7 previously-unused fields into a 0–100% probability score shown in the opportunity header. Signals sub-tab in Intelligence shows objections (with recurrence count) and buying intent from `keyQuotes`. DealMomentum now shows EB/champion coverage gaps. StallPatternBanner detects 6-factor stall patterns. Contact `signals` field now persisted from stakeholder-map (was being discarded). Channel-import now writes extracted intelligence back to parent node properties (was discarding structured data into HTML). 1959 passing.
+
+### Chat History Persistence — March 31, 2026
+Chat messages now survive page reloads and work across devices. Added `Conversation` + `ChatMessage` models to schema (applied via prisma db push). `POST /api/chat` now creates/continues conversations and persists both turns to DB. New `GET /api/conversations/latest` seeds the chat UI on mount. New `DELETE /api/conversations/[id]` backs the Clear button. History is now loaded from DB server-side, not trusted from the client. 1953 passing.
+
+### Intelligence Automation — March 31, 2026
+Reduced the meeting-to-insights workflow from 4 manual steps to 1. Auto-analyze fires after audio transcription (no button click). Action items auto-create board cards (no blocking modal). Every meeting analysis now automatically re-synthesizes COM, tech-qual, and stakeholder map for the parent opportunity (progressive intelligence). Inline `PendingSuggestionsBar` shows pending AI suggestions on the opportunity page with one-click "Accept all". Meeting prep cron now actually generates prep notes (was previously just a nudge reminder). X-Internal-User header auth added to analyze-com, tech-qual, stakeholder-map for secure internal dispatch. 1943 passing.
+
+### AI Analysis Workflow Overhaul — March 31, 2026
+Full audit and fix of the AI analysis pipeline. 10 root causes fixed: `withJob()` now fails on all non-2xx; `analyze-state` missing 4 failJob calls; `analyze-presales` called completeJob on errors + wrong job type (`analyze_presales` now); `poc/extract` missing failJob on 422; `tech-qual`, `stakeholder-map`, `analyze-note` had zero job tracking (all added). Push notifications from web analyze silently suppressed — `sendNotification: true` now sent. Reload resilience added to TranscriptAnalyzer. AIJobBell polls every 30s when jobs are running. Overlay scoped to section. 18 new tests. 1940 passing.
+
+### Comprehensive Security + Code Quality Review — March 30, 2026
+Full security audit of the webapp. 18 issues fixed across critical/high/medium/low severity. Key fixes: notebook PATCH privilege escalation (shared-access users could modify nodes they don't own), board rename IDOR, `isAdmin` JWT always derived from `role` (not DB field), `sanitizeHtml` regex bypass for event handlers without leading whitespace, account lockout now uses atomic Prisma `increment` (race condition), mobile JWT reduced from 30d to 8h, attachment upload rate limit added, email enumeration in invite endpoint closed, property size/count limits added (keys 50 chars, values 100k chars, max 100 properties), share token invalid attempts now logged, members list paginated (100/page), composite index `(boardId, col)` on Card, FK relations for `Card.accountNodeId`/`opportunityNodeId` with `onDelete: SetNull`, search results ordered by `updatedAt`, AI job `failJob` gaps fixed in `prep` and `analyze-com` routes, Zod error format normalized in `apiFetch`. Schema changes applied to Supabase via `prisma db push`. 1920 tests passing.
+
+### Proper SysLog — March 30, 2026
+New `SysLog` DB table (append-only, 30-day TTL). `logger.info/warn/error` all persist to SysLog; `warn/error` also persist to ErrorLog. `source` field on every entry. `GET /api/admin/syslog` route with search, level, source, time-range filters. Syslog admin page rebuilt: level/source/time-range chips, read-only expand panel. Instrumentation added to auth routes (register, reset-password success), 9 agent/cron routes (start + completion). 1904 tests passing.
+
+### Multi-Opp Context Extraction + Comprehensive Logging + Syslog — March 30, 2026
+`analyze-note` now runs a second LLM pass to detect which opportunities are discussed in sync call notes and extract relevant context per opp. New `apply-opp-contexts` route creates "additional context" note children under each accepted opp. `NoteAnalyzer` renders the review/accept UI. Auth routes now log warn/error on bad credentials and unexpected failures. All 15 admin routes wrapped with try/catch + `logger.error`. `audit()` added to member deletion. `GET /api/errors` gains `search` param. 1890 tests passing.
+
+### AI Context Improvements — March 26, 2026
+Audited all 13 AI-calling routes and fixed the highest-impact context gaps. `analyze` now fetches attachments from both the meeting node and its linked opportunity. `analyze-note` was operating with zero context — now includes deal context so action items are assigned to the right people. `followups` upgraded from basic `getDealContext` to `getRichDealContext` (full COM fields + contacts + channel signals) plus attachment context. `next-action` adds uploaded document context and a health score signal that flags RED/YELLOW deals for re-engagement. `meeting-prep` now includes `actionItems` from sibling meetings (not just summary + problems) and attachment context from the opportunity. New `getRichDealContext()` in `lib/deal-context.ts` as the single rich context builder for action-oriented routes.
+
+### CSV + Excel File Upload — March 26, 2026
+Document uploads now accept `.csv`, `.xlsx`, `.xls` in addition to PDF, Word, HTML. Text extraction produces an LLM-readable pipe-separated table (500-row cap, 60 KB limit). Excel workbooks render as multiple named sheets. Supabase MIME allowlist bypassed gracefully via `application/octet-stream` fallback on upload; real MIME type preserved in DB for viewer/download.
+
+### Comprehensive Test Coverage — March 26, 2026
+Grew from 89 test files / 982 tests to **137 test files / 1876 tests** across sensei-webapp. Added 65+ MSW handlers covering all API domains. New test files: 11 lib utilities, 25+ React Query hooks (mutations and queries), 21 API route files. API route coverage: ~55/163 routes (34% → ~78% for implemented routes). Hook coverage: 14/95 → 92/95 (97%).
+
+### Error Log Cleanup — March 26, 2026
+All 70 unresolved errors cleared. `[stage-actions] LLM JSON parse error` fixed: bare `JSON.parse` wrapped in inner try/catch, falls back to `STAGE_FALLBACK` silently. 63 infrastructure errors (LLM 403/timeout on Vercel) marked as known Vercel→Okta network limitation. 5 stale client bugs already fixed in code marked resolved.
+
+### Recording Auto-Pause Bug Fixed (sensei-mobile) — March 26, 2026
+Recording was pausing after every utterance (every 12-second chunk rotation). Root cause: `rotateChunk()` in `openai-realtime.ts` did not remove the old recorder's `statusListener` before `rec.stop()`. After the `finally` block reset `intentionallyStopping = false`, the old recorder's final `recordingStatusUpdate(isFinished: true)` event arrived, passing all guards and triggering `handleInterruption()` → `onInterrupted()` → UI showed "paused" after every utterance. Fix: 2-line addition at top of `rotateChunk()` to remove and null the listener before stopping. Full test suite: 524 passing.
+
+### Playwright E2E — Full Flow Coverage — March 26, 2026
+Added 6 new spec files covering all previously untested flows: post-meeting agent pipeline (all 12 agents), todos + checklists, admin management (members/releases/audit/errors/feedback), auth edge cases (mobile JWT, lockout, reset, rate limiting), notebook advanced features (power map, custom props, POC snapshots, attachments, meeting templates), notifications + dark mode + responsive layout. 69/149 new tests passing. Known failure pattern: `request.newContext()` inherits Playwright auth in e2e project — fix is to use `browser().newContext()` for unauthenticated test contexts.
+
+### Kanban Drag-Drop Fix (Today/Blocked columns) — March 25, 2026
+Dragging cards to Today and Blocked columns was silently failing. Root cause: `closestCorners` returned adjacent card IDs as geometrically closer than the empty column's small droppable zone. Fix: (1) moved `setNodeRef` to the full `kanban-col` div, (2) replaced `closestCorners` with `kanbanCollisionDetection` — a custom `pointerWithin`-first algorithm that snaps to the column when the pointer is inside it but over no card. Regression tests added for all 5 column drag targets.
+
+### Comprehensive Playwright E2E Suite — March 25, 2026
+Grew the E2E suite from 94 tests to ~290 tests. New files: `notebook.spec.ts` (40 tests, full CRUD + API), `ai-features.spec.ts` (20 tests), `live-session.spec.ts` (18 tests, full session API coverage), `share.spec.ts` (15 tests). Expanded board/pipeline/critical-path specs with API tests, drag-drop for all 5 columns, card field validation, board management, and session persistence critical path. Fixed auth setup timeout (replaced `networkidle` with element selector wait). Auth works: 14/17 auth tests pass; API tests: 51/72 pass (18 failures are "unauthenticated" tests that need `request.newContext()` fix).
+
+### Notebook Tree Sync Fix — March 25, 2026
+Fixed "tree doesn't update without reload" across all create/delete/reparent mutations. Root cause: `invalidateQueries` only marks queries stale — with `staleTime: 30min` and no active observer (after navigation), the cache was considered fresh and never refetched. Fix: switched to `refetchQueries({ type: 'all' })` in `useAddTopLevelAccount`, `useAddFreeFolder`, `useAddChildNode`, `useDeleteNode`, `useReparentNode`. Also added missing `onSettled` to `useUpdateNodeContent` so content saves sync the tree. 6 new tests.
+
+### Account Display Name Bug Fixed — March 25, 2026
+Renaming an account in the tree didn't update the main view header. Root cause: header rendered `p.company || node.title` — `p.company` silently overrode `node.title`. Fix: `node.title` is now the single source of truth via `getAccountDisplayName()` in `lib/account-utils.ts`. Removed the `p.company` priority in `AccountDetail.tsx` and `NotebookPage.tsx`. 3 new tests.
+
+### Schema Index Optimisations — March 25, 2026
+Added missing indexes: `NotebookNode.parentId` (every tree load), `Card.col`, `Card.accountNodeId`, `Card.opportunityNodeId`, `AIJob.userId`, `LiveSession.userId`. Removed redundant indexes: `ShareToken.token` (covered by `@unique`), duplicate `ErrorLog.createdAt`, duplicate `Feedback.createdAt`. DB backup taken before changes.
+
 ### Transcription Fixed (Groq) — March 23, 2026
 Switched `/api/transcribe` and `/api/notebook/transcribe` from LiteLLM to Groq (`whisper-large-v3-turbo`). Root cause: LiteLLM blocks non-Okta-network IPs server-side — Vercel gets 403. Groq is publicly accessible. Also restored schema fields accidentally removed in chat rollback: `AuditLog`, `User.notificationPrefs`, `Feature.userId`.
 
@@ -134,7 +218,7 @@ Admin error log rebuilt with complete investigative context per error entry.
 - API PATCH: accepts `adminNote`, records `resolvedByUserId` from admin session
 - Admin page: user name/email/org, browser/OS parsed from platform, method+path+status in row, expandable detail with stack trace, resolution note + "Mark resolved" workflow, shows resolver + timestamp + note after resolve
 
-**Still to build:** search by message/user email, assignee per error, critical alerts (email/Slack), error frequency sparkline
+**Still to build:** assignee per error, critical alerts (email/Slack), error frequency sparkline. Search by message/path: done (March 30, 2026) — see Syslog page.
 
 ---
 
@@ -200,15 +284,8 @@ User feedback submission and error tracking infrastructure.
 
 ---
 
-### Deployment Guide AI (Browser-side LLM) — March 20, 2026
-Fixed AI generation for the Okta deployment guide. Root cause: Okta LiteLLM proxy is IP-restricted; Vercel servers get 403.
-
-**Delivered:**
-- `lib/litellm-browser.ts` — client-side LiteLLM caller using `NEXT_PUBLIC_LITELLM_*` vars
-- `DeploymentGuide.tsx` — browser-first LLM call; actual error message in toast
-- `NEXT_PUBLIC_LITELLM_*` env vars added to `.env.local` and Vercel
-
-**Note:** Pattern needs to be applied to all other user-triggered AI routes (next-action, research, analyze, etc.).
+### ~~Deployment Guide AI (Browser-side LLM)~~ — Built March 20, 2026, reverted March 2026
+Built browser-side LiteLLM calling (`lib/litellm-browser.ts`, `NEXT_PUBLIC_LITELLM_*` vars) to work around the Vercel IP restriction. Later reverted: key exposed in browser bundle, approach inconsistent with security requirements. All LiteLLM calls are now server-side only. The Vercel network issue remains unsolved — see CLAUDE.md deployment section for options.
 
 ---
 
@@ -294,7 +371,7 @@ App is deployed on Vercel. The following items must be completed before the pilo
 
 2. **GitHub secrets for E2E** — Add `TEST_USER_EMAIL=e2e.runner@se-n-sei.com` and `TEST_USER_PASSWORD=SenseiE2eBot#2026!` in repo Settings → Secrets → Actions.
 
-3. **Browser-side LLM for all AI routes** — Apply `callLiteLLMBrowser()` pattern to: `next-action`, `research`, `analyze`, `analyze-state`, `analyze-com`, `okta-advisor`, `stakeholder-map`, `meeting-prep`. Currently only `deployment-guide` is fixed.
+3. **Vercel → LiteLLM network fix** — All AI routes are server-side. Vercel servers get 403 from `llm.atko.ai` (not on Okta network). Options: Okta IT whitelist Vercel CIDR, Vercel Static Outbound IPs (~$50/mo), or relay proxy on Okta network.
 
 ### Nice-to-have before pilot
 
@@ -308,13 +385,11 @@ App is deployed on Vercel. The following items must be completed before the pilo
 
 Before expanding beyond the 30-SE pilot:
 
-1. **Browser-side LLM for all AI routes** — apply `callLiteLLMBrowser()` to next-action, research, analyze, analyze-state, analyze-com, okta-advisor, stakeholder-map, meeting-prep. Alternatively: get Vercel IPs whitelisted in `llm.atko.ai`.
+1. **Vercel → LiteLLM network fix** — if not already done for pilot, this is mandatory at scale. All AI routes are server-side; pick one of the three options documented in CLAUDE.md.
 
 2. **Replace SSE EventEmitter** — `ai-jobs.ts` uses in-process EventEmitter; doesn't work across Vercel function invocations. Replace with Supabase Realtime or simple DB polling. ~1 day of work.
 
 3. **Wire Upstash Redis** — Distributed rate limiting. Config already in `.env.local` (commented out). Just needs credentials added to Vercel env vars.
-
-4. **Rotate `NEXT_PUBLIC_LITELLM_API_KEY`** — Exposed in browser bundle for the pilot. Rotate after pilot ends, implement proper server-side fix.
 
 ### Scaling — 300 Users (Series A territory)
 
@@ -465,6 +540,32 @@ Everything below is deferred until after the Okta go-live. No new features until
 
 ---
 
+### Zoom App Plugin — Live Captions → sensei-webapp
+
+**Status:** Planned — implementation deferred, full plan ready (March 2026)
+
+**What it does:** A Zoom App panel (iframe inside Zoom desktop client) that streams live meeting captions directly into the sensei live session pipeline — no mobile device needed.
+
+**Architecture (plan complete):**
+- Zoom App hosted at `/zoom-app` — iframe runs inside Zoom sidebar, auth via existing NextAuth session cookie (same domain, no extra auth)
+- `zoomSdk.addEventListener('onLiveTranscriptionMessage', ...)` → batch POST to existing `/api/live-sessions/{id}/utterances`
+- `zoomSdk.addEventListener('onMeetingEnded', ...)` → POST to existing `/api/live-sessions/{id}/finalize` → triggers post-meeting agent (unchanged)
+- SE picks account/opportunity from the sidebar before recording starts
+
+**What needs to be built:**
+1. `app/zoom-app/layout.tsx` + `app/zoom-app/page.tsx` — Zoom App UI (4 states: unauthenticated, idle, recording, done)
+2. `prisma/schema.prisma` — add `source String @default("mobile")` and `zoomMeetingId String?` to `LiveSession`
+3. `app/api/live-sessions/route.ts` — accept `source` and `zoomMeetingId` in POST body
+4. `proxy.ts` — add `/zoom-app/**` to public paths
+5. Install `@zoom/appssdk`
+6. Register Zoom App in Zoom Marketplace (external one-time setup)
+
+**All existing API routes reused as-is** — no changes to finalize, utterances, or post-meeting agent.
+
+**Tests to write first:** `__tests__/api/live-sessions/create-zoom-source.test.ts` (source=zoom + zoomMeetingId validation)
+
+---
+
 ### IAM — OpenFGA + OIDC SP + SCIM + Multi-Tenancy
 
 **Decisions already locked (design complete, implementation deferred):**
@@ -582,6 +683,65 @@ Admin UI to create/edit/delete templates. Template variables (account name, AE, 
 ### Competitive Gap — Gong Call Intelligence
 **Gap vs.** Gong
 Pull call transcript + AI summary into meeting notes. Surface deal signals. Coaching flags for managers.
+
+---
+
+## Planned
+
+### Autonomous Bug-Fix Agent (EC2 + Claude Code)
+A always-on daemon running on EC2 that watches the sensei error log and auto-fixes production bugs using Claude Code.
+
+**Architecture:**
+- EC2 polls `/api/admin/errors` every 5 minutes for unresolved errors
+- On new error: `git pull` → invokes `claude --dangerously-skip-permissions` with error context
+- Claude Code reads codebase, edits files, runs `vitest`
+- If tests pass → commits to `hotfix/auto-[error-id]` branch → pushes → opens GitHub PR
+- Admin panel shows "Fix Pending" status + link to PR per error
+- Human reviews PR → approves → Vercel auto-deploys
+
+**What's needed:**
+- Claude Code installed + authenticated on EC2
+- `GITHUB_TOKEN` with repo write access on EC2
+- `scripts/bug-agent.ts` daemon (designed, ready to build)
+- `fix_pending` status on `ErrorLog` model
+- "View PR" link in admin error log UI
+- PM2 to keep daemon alive across reboots
+
+**Safety:** Commits to hotfix branch only — never directly to main. Tests must pass before push.
+
+---
+
+### sensei MCP Server
+A Model Context Protocol server that connects Claude (claude.ai or Claude Code) to live sensei deal data, enabling AI-generated content grounded in real opportunity context.
+
+**What it enables:**
+- *"Draft the follow-up email for the Waters POC checkpoint"* → Claude knows Waters context
+- *"What are my top 3 at-risk deals?"* → Claude queries live pipeline
+- *"Summarize everything before my Acme call tomorrow"* → full account + meeting history
+- *"Generate BV slides for Waters"* → uses real CoM data
+
+**Architecture:**
+- TypeScript MCP server (`@modelcontextprotocol/sdk`) that authenticates to sensei API
+- Tools exposed: `get_opportunity`, `get_pipeline`, `get_meetings`, `get_action_items`, `get_com`, `search_deals`, `get_account`
+- Claude Code skill (Bash-based) for CLI/IDE use — no MCP server needed for that path
+- MCP server needed only for claude.ai web app integration
+
+**What needs building:**
+1. API key authentication endpoint (`POST /api/auth/api-key`) — long-lived key for non-browser auth
+2. MCP server (~300 lines TypeScript) connecting those tools to existing API endpoints
+3. User setup: add server to Claude Desktop / claude.ai MCP config
+
+**Note:** For Claude Code CLI, a simpler Bash-based skill can achieve the same without a server.
+
+---
+
+### B2B Tenant Provisioning
+`POST /api/admin/organizations` + `/admin/tenants` page. Fill org name/slug/admin email → click Provision → creates org, sets billing active, sends invite email. Needed before external rollout.
+
+---
+
+### Switch Okta Issuer to Production
+Change from `goals.oktapreview.com` → `sen-sei.okta.com` via Admin → Identity Provider. No code change needed — takes effect immediately via 60s cache.
 
 ---
 

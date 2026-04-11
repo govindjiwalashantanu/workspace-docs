@@ -9,6 +9,34 @@ All development in this repo follows the protocol defined at:
 
 Read it before starting any task. Every feature must clear the full persona pipeline before being presented to the owner.
 
+At the start of each session, also read:
+- `SESSION_NOTES.md` — prior session history, recent commits, and what's next
+- `ROADMAP.md` — feature status and upcoming scope
+
+## Current State
+_Update this section at the end of every session._
+
+**Last session:** April 11, 2026
+**Tests:** 2319 passing · 0 failing (192 files)
+**TypeScript:** Clean
+**E2E specs on hold:** 28 spec files / 664+ tests written. Last subset run: 85 passed, 43 skipped, 0 failed.
+**Repo:** Migrated to `atko-presales/sensei` on Okta GitHub (via Terminus/OCM). OCM install + git config needed to push.
+**Pilot status:** Sean Newell (presales strategy, works with Joel + Eve) engaged. Rick (SE Manager) supporting. TDI meeting planned for infrastructure/API access asks.
+**Blocked on (pilot):** Moving to Okta AWS resolves LiteLLM network issue. TDI ask submitted via `/prod-readiness` page (local only — not in git).
+
+## Custom Skills
+
+Four project-specific skills are available in `.claude/skills/`:
+
+| Skill | Purpose |
+|---|---|
+| `/new-agent` | Scaffold a new AI agent (API route + LiteLLM integration + React Query hooks) |
+| `/add-query` | Add React Query hooks to `lib/queries.ts` following existing conventions |
+| `/new-route` | Scaffold a new Next.js API route with `requireAuth()`, Zod validation, and Prisma |
+| `/prisma-migrate` | Create a safe Prisma migration (generates, reviews, applies to Supabase) |
+
+Use these instead of writing boilerplate from scratch.
+
 ## Commands
 
 ```bash
@@ -19,7 +47,7 @@ npm test              # Run tests in watch mode (Vitest)
 npm run test:ui       # Interactive Vitest UI
 npm run test:coverage # Coverage report
 npx vitest run        # Run all unit tests once (CI mode)
-npx tsc --noEmit      # Type-check without emitting
+npx tsc --noEmit      # Type-check without emitting (TypeScript errors are intentionally suppressed in next.config.ts; CI runs this separately)
 ```
 
 Run a single test file:
@@ -32,7 +60,7 @@ Run E2E / Playwright tests:
 npx playwright test                   # All projects (setup + e2e + smoke)
 npx playwright test --project=smoke   # Unauthenticated smoke tests only
 npx playwright test --project=e2e     # Authenticated E2E tests
-npx playwright test tests/notebook.spec.ts  # Single spec file
+npx playwright test __tests__/e2e/notebook.spec.ts  # Single spec file
 ```
 
 ## Architecture
@@ -41,25 +69,29 @@ npx playwright test tests/notebook.spec.ts  # Single spec file
 
 ### Directory Layout
 
-- `app/api/` — 30+ REST API routes, organized by domain (boards, notebook, organizations, calendar, search, etc.)
+- `app/api/` — 35+ REST API routes, organized by domain (boards, notebook, organizations, calendar, search, etc.). Key AI routes: `notebook/[id]/analyze`, `analyze-worker`, `analyze-com`, `analyze-state`, `analyze-presales`, `analyze-bv` (BV slides), `poc/extract` (Gemini).
+- `app/api/seed-demo-data/route.ts` — POST seeds Waters OCI + BMC real deal data (all AI fields pre-populated); DELETE removes all `isDemoData="true"` tagged nodes. Source data in `app/api/seed-demo-data/data.ts` (auto-generated from DB export).
+- `app/demos/page.tsx` — Demo library with liquid glass UI. Videos at `public/demos/` named `01-the-pitch.mp4` → `09-the-business-case.mp4` in narrative order + `sensei-full-demo.mp4`.
+- `app/execmeeting2/page.tsx` — Public executive deck for leadership meetings (no auth). 9 slides with embedded full demo video. URL: `/execmeeting2`.
+- `app/poc-guide/[opportunityId]/` — Standalone printable POC guide page (PDF export)
 - `app/` — Page layouts, `providers.tsx` (React Query + NextAuth), `login/`
-- `components/` — All React UI components; `AppShell.tsx` is the main shell handling navigation and page routing
+- `components/` — All React UI components; `AppShell.tsx` is the main shell. `OpportunityDetail.tsx` has two main tabs: **Sales** (CoM fields, Mantra, BV Slides, Signals) and **Presales** (Presales fields, State Analysis, TechQual, POC Guide). `OpportunityAIPanel.tsx` handles all AI generation buttons.
 - `lib/` — Business logic and utilities:
-  - `queries.ts` — All React Query hooks (60+ operations covering every domain)
+  - `queries.ts` — All React Query hooks (65+ operations covering every domain)
   - `store.ts` — Zustand store for UI-only state (active page, active board, notebook state, onboarding tour)
   - `auth.ts` — NextAuth configuration (Okta, Google, Credentials providers)
   - `auth-helpers.ts` — `requireAuth()` middleware used in every API route
   - `prisma.ts` — Prisma client singleton
-  - `encrypt.ts` — AES-256-GCM encryption for stored secrets
-  - `calendar-sync.ts` / `gcal.ts` — Google Calendar integration
-  - `litellm-client.ts` — Server-side LLM calls (used in API routes; see LiteLLM proxy note below)
-  - `litellm-browser.ts` — Browser-side LLM calls (only when `NEXT_PUBLIC_LITELLM_BASE_URL` is defined)
+  - `prompt-defaults.ts` — All AI prompt definitions (customizable per-org via Prompt Manager). Calibrated for SE/Sales leadership output.
+  - `poc-merge.ts` — POC draft utilities: `PocDraft` type, `pocDraftToUpserts` for DB writes
+  - `com-constants.ts` — Single source of truth for CoM field keys
+  - `litellm-client.ts` — Shared `callLiteLLM()` helper used by newer agent routes
   - `ai-guard.ts` — Prompt injection / jailbreak detection applied before AI calls
   - `audit.ts` — `logAudit()` helper for key mutations (attached to org + user)
   - `health-score.ts` — Deal health score calculation
   - `ai-jobs.ts` — Background AI job tracking (feeds the notification bell in the UI)
   - `logger.ts` — Error reporting to `/api/errors` with deduplication
-- `prisma/schema.prisma` — Models covering auth, multi-tenancy, boards, notebook, features, integrations, AI chat history (`Conversation`, `ChatMessage`), background jobs (`AIJob`), error tracking (`ErrorLog`), and live session coaching (`LiveSession`, `AgentSuggestion`)
+- `prisma/schema.prisma` — Models covering auth, multi-tenancy, boards, notebook, features, integrations, AI chat history (`Conversation` + `ChatMessage`), background jobs (`AIJob`), error tracking (`ErrorLog`), and live session coaching (`LiveSession`, `AgentSuggestion`)
 - `types/index.ts` — Core domain types
 - `constants/index.ts` — Pipeline stages, meeting templates, priorities
 - `middleware.ts` — NextAuth protection + extracts subdomain into `x-org-context` header
@@ -68,7 +100,7 @@ npx playwright test tests/notebook.spec.ts  # Single spec file
 
 Two-layer system:
 1. **Server state** — React Query (`lib/queries.ts`). All data fetching uses hooks like `useBoards()`, `useNotebookTree()`, `useFeatures()`. Mutations call `invalidateQueries` on success. Default staleTime: 30s, gcTime: 60min.
-2. **UI state** — Zustand (`lib/store.ts`), persisted to localStorage under key `sensei-ui`. Holds active page, active board ID, notebook sidebar widths, and tour progress.
+2. **UI state** — Zustand (`lib/store.ts`), persisted to localStorage under key `sensei-ui`. Holds active page, active board ID, notebook sidebar widths, tour progress, and `opportunityTabs` (per-opportunity tab memory: `Record<nodeId, { activeTab, salesSubTab, presalesSubTab }>`). Tab state restored on refresh so users return to the exact tab they were on.
 
 ### Multi-Tenancy
 
@@ -78,6 +110,8 @@ Every DB model scopes to `organizationId`. On first login, NextAuth creates a Us
 
 The notebook is a tree of `NotebookNode` records with types: `account`, `opportunity`, `meeting`, `contact`, `note`, `free-folder`. Accounts have Opportunity children; Meetings have Action Item children. Properties are stored in `NodeProperty` (standard) and `NodeCustomProp` (user-defined) as key-value pairs. The client builds the tree via `buildNotebookTree()` in `lib/queries.ts`.
 
+**POC Guide:** Opportunities with POC data render a dedicated printable guide (`app/poc-guide/[opportunityId]/page.tsx`). POC data is stored as `NodeProperty` keys prefixed with `poc_` (e.g. `poc_use_cases`, `poc_environment`, `poc_milestones`, `poc_success_criteria`). The extraction pipeline uses a **single Gemini call** (full untruncated context, 1M window) that extracts all fields including narrative sections in one pass. Fallback: Claude full context (no chunking). Build steps are a separate on-demand route (`poc/build-steps`) triggered by a "Generate Build Steps" button in the AI panel (only shown when use cases exist).
+
 ### API Pattern
 
 Every API route calls `requireAuth()` from `lib/auth-helpers.ts`, which returns the session and enforces org membership. The client uses the `apiFetch()` helper (throws on non-OK responses). Responses are plain JSON or 204 No Content.
@@ -86,7 +120,7 @@ Every API route calls `requireAuth()` from `lib/auth-helpers.ts`, which returns 
 
 NextAuth v4 with three providers: **Okta** (enterprise OIDC, `goals.oktapreview.com`), **Google** (OAuth with calendar scopes), and **Credentials** (email/password).
 
-**Note:** A new Okta tenant (`sen-sei.okta.com`) has been provisioned via Terraform (`terraform/okta/`) with a custom domain (`login.se-n-sei.com`, DNS pending). When ready to switch, update `OKTA_CLIENT_ID`, `OKTA_CLIENT_SECRET`, `OKTA_ISSUER` in Vercel env vars and restore the Okta-only `lib/auth.ts`.
+**Note:** A new Okta tenant (`sen-sei.okta.com`) has been provisioned via Terraform (`terraform/okta/`) with a custom domain (`login.se-n-sei.com`, DNS pending). To switch tenants: update settings in Admin → SSO/IDP (takes effect immediately, no redeploy). Env vars remain as fallback if DB config is cleared. `lib/auth-config-cache.ts` manages 60s TTL cache; `buildAuthOptions()` in `lib/auth.ts` is used by the dynamic NextAuth route handler.
 
 ### Styling
 
@@ -94,10 +128,18 @@ All styles live in a single file: `app/globals-redesign.css`. Do not create addi
 
 ### AI Services
 
-Three AI services are in use:
-- **LiteLLM proxy** (`llm.atko.ai`) — primary LLM calls; see the LiteLLM proxy note in the Deployment section for the server-vs-browser split
-- **Groq** (`GROQ_API_KEY`) — Whisper transcription for live session audio
+All LLM calls are **server-side only** via the `llm.atko.ai` proxy (IP-restricted to Okta corporate network). Two API keys in use:
+
+- **`LITELLM_API_KEY`** (`claude-4-6-opus`) — used by all analysis routes: meeting analysis, CoM synthesis, state analysis, presales, stakeholder map, BV slides, chat, and all agents.
+- **`LITELLM_GEMINI_KEY`** (`gemini-2.5-pro`) — used exclusively by POC extraction (`app/api/notebook/[id]/poc/extract/route.ts`). The 1M context window handles all meetings + attachments untruncated in a single call. Falls back to Claude full context (no chunking) if the key is absent or call fails.
+- **Groq** (`GROQ_API_KEY`) — Whisper transcription for live session audio (publicly accessible, no IP restriction)
 - **Tavily** — web search used by AI agents
+
+**AI route timeouts:** Each route has `maxDuration` (Vercel) and an AbortController timeout per endpoint (typically 90s × 2 endpoints = 3 min max failure time). POC extraction uses 180s timeout with `after()` fire-and-forget.
+
+**`parseLiteLLMJson` in `lib/litellm-client.ts`:** Uses a balanced-brace walker (not a greedy regex) to extract JSON from LLM responses — handles Claude responses that append trailing text after the closing brace. Also strips all markdown code fences. Use this for all JSON parsing from LLM output.
+
+**Prompt system:** All AI prompts are defined in `lib/prompt-defaults.ts` and can be customized per-org via the Prompt Manager UI (Admin → Prompts). Prompts are calibrated for SE/Sales leadership output — deal intelligence, not data extraction. The `bv_slides` prompt generates executive-ready Business Value slide content.
 
 ### Testing
 
@@ -120,12 +162,11 @@ OKTA_CLIENT_ID, OKTA_CLIENT_SECRET, OKTA_ISSUER
 GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
 RESEND_API_KEY                 # Email delivery (password reset, verification)
 EMAIL_FROM                     # e.g. "senSEi <hello@se-n-sei.com>"
-LITELLM_API_KEY                # Internal Okta LiteLLM proxy key (server-side, unused from Vercel due to IP restriction)
+LITELLM_API_KEY                # Internal Okta LiteLLM proxy key — claude-4-6-opus (server-side only; 403s on Vercel — see Deployment)
 LITELLM_BASE_URL               # https://llm.atko.ai
-LITELLM_MODEL                  # claude-4-6-sonnet
-NEXT_PUBLIC_LITELLM_API_KEY    # Vercel only — NOT in .env.local. Browser-side fallback for Vercel deployments.
-NEXT_PUBLIC_LITELLM_BASE_URL   # Vercel only — NOT in .env.local. See LiteLLM note below.
-NEXT_PUBLIC_LITELLM_MODEL      # Vercel only — NOT in .env.local.
+LITELLM_MODEL                  # claude-4-6-opus
+LITELLM_GEMINI_KEY             # Gemini-only proxy key — gemini-2.5-pro (used exclusively by POC extraction)
+LITELLM_GEMINI_MODEL           # gemini-2.5-pro
 GROQ_API_KEY                   # Whisper transcription
 ENCRYPTION_KEY                 # 64-char hex, AES-256-GCM for stored secrets
 AGENT_CRON_SECRET              # Auth token for cron-triggered agent endpoints
@@ -176,41 +217,36 @@ Vercel's build runs `prisma generate` automatically during deployment.
 
 ### AI features — LiteLLM proxy
 
-The Okta internal LiteLLM proxy (`llm.atko.ai`) only accepts requests from inside the Okta corporate network. Vercel servers are outside that network → 403.
+The Okta internal LiteLLM proxy (`llm.atko.ai`) only accepts requests from inside the Okta corporate network. **All LiteLLM calls are server-side** — `lib/litellm-client.ts` is used in every AI route; no browser-side calls exist.
 
-| Context | How to call LiteLLM | Why |
-|---|---|---|
-| **localhost (dev)** | Server-side only | Server is on Okta network → 200. Do NOT set `NEXT_PUBLIC_LITELLM_*` in `.env.local`. |
-| **Vercel (production — pilot workaround)** | Browser-side via `NEXT_PUBLIC_LITELLM_*` | Vercel server gets 403. SE's browser is on Okta network → 200. |
+| Context | Status |
+|---|---|
+| **localhost (dev)** | ✅ Works — dev machine is on Okta network |
+| **Vercel (production)** | ❌ 403 — Vercel servers are not on Okta network |
 
-**Current state (pilot workaround):** `NEXT_PUBLIC_LITELLM_*` vars set in Vercel. `DeploymentGuide.tsx` calls LiteLLM from the browser. `lib/litellm-browser.ts` is the client-side helper. **Only `deployment-guide` uses this pattern** — the remaining 8 AI routes (`next-action`, `research`, `analyze`, `analyze-state`, `analyze-com`, `okta-advisor`, `stakeholder-map`, `meeting-prep`) still call server-side and will 403 on Vercel.
-
-**Known issue:** `NEXT_PUBLIC_LITELLM_API_KEY` is exposed in the browser bundle. Rotate after pilot ends.
-
-**Proper fix — options evaluated (March 2026, decision pending):**
+**This is the pilot blocker.** Three options evaluated (decision pending):
 
 | Option | How | Pro | Con |
 |---|---|---|---|
-| **1. Whitelist Vercel IPs** | Ask Okta IT to add Vercel's outbound CIDR to `llm.atko.ai` allowlist | No code changes, no infra | Large/changing IP range; needs Okta IT |
-| **2. Vercel Static Outbound IPs** | Enable static IPs on Vercel Pro — one fixed IP to whitelist | Clean, one IP, fully server-side | ~$50/mo add-on |
-| **3. Relay proxy on Okta network** | Small server (EC2 nano/Fly.io) on Okta network forwarding `/v1/chat/completions` to `llm.atko.ai`; Vercel calls relay | Works today, no key exposure | Extra infra to maintain |
-
-**Next action:** Pick one option and implement before expanding beyond pilot.
+| **1. Whitelist Vercel IPs** | Okta IT adds Vercel's outbound CIDR to `llm.atko.ai` allowlist | No code changes | Large/changing IP range; needs IT ticket |
+| **2. Vercel Static Outbound IPs** | Enable on Vercel Pro — one fixed IP to whitelist | Clean, one IP, fully server-side | ~$50/mo |
+| **3. Relay proxy on Okta network** | Small server on Okta network forwarding `/v1/chat/completions` → `llm.atko.ai` | Works today | Extra infra to maintain |
 
 ### Agent cron jobs
 
-The post-meeting agent (`/api/agent/post-meeting`) is triggered via cron. Configure in `vercel.json` or use an external cron service:
+Seven crons are configured in `vercel.json` (all UTC):
 
-```json
-{
-  "crons": [{
-    "path": "/api/agent/post-meeting",
-    "schedule": "*/5 * * * *"
-  }]
-}
-```
+| Route | Schedule |
+|---|---|
+| `/api/agent/post-meeting` | Daily 6am |
+| `/api/agent/digest-email` | Daily 7am |
+| `/api/agent/deal-monitor` | Daily 7:30am |
+| `/api/agent/meeting-prep` | Every 30 min |
+| `/api/agent/followup` | Hourly |
+| `/api/agent/weekly-digest` | Friday 4pm |
+| `/api/docs-cache/refresh` | Daily 6am |
 
-Set `AGENT_CRON_SECRET` in Vercel env vars. The endpoint validates this header.
+All cron endpoints validate the `AGENT_CRON_SECRET` header.
 
 ---
 
