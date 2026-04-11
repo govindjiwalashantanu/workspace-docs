@@ -1,11 +1,11 @@
 # senSEi — Session Notes
-_Last updated: April 11, 2026 (addendum 8)_
+_Last updated: April 15, 2026_
 _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1.md_
 
 ## ⟶ What's Next
-- [x] **Overlay Part B** — mini-panel after 3s, elapsed timer ✓
-- [x] **Overlay Part C+D** — pre-analysis warnings + 10s review countdown ✓
-- [x] **Overlay Part E+F** — Results diff panel + error categories ✓
+- [x] **Database ER Diagram** — Admin → Database, live schema from information_schema, Mermaid erDiagram, table filter ✓
+- [ ] **Database visualizer remaining tabs** — Table Stats, Data Browser, Query Runner (approved scope, not yet built)
+- [ ] **Add release note** — "Database Schema Viewer" via Admin → Releases when server is running
 - [ ] **Staging environment** — RDS `sensei-db-staging`, ECS service `sensei-webapp-staging`, ALB rule, `staging.se-n-sei.com` DNS
 - [ ] **Bug Fix Agent** — EC2 daemon, `scripts/bug-agent.ts`, admin UI badges + PR links, schema 3 fields
 - [ ] **Live Support Agent** — `/api/agent/support`, Support tab in AICopilotPanel
@@ -16,7 +16,34 @@ _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1
 - [ ] Sean Newell TDI meeting — bring `/prod-readiness` PDF (local, print before meeting)
 - [ ] File provisional patent — route IDF to Okta IP counsel via Sean/Joel
 - [ ] Gong API credentials — Sean to arrange with Okta Gong workspace admin
-_Updated: April 11, 2026_
+_Updated: April 15, 2026_
+
+---
+
+## Session: April 15, 2026 — Database ER Diagram (Admin Console)
+
+### What was built
+
+**Database Schema Viewer** — new `Admin → Database` page that renders a live ER diagram of the PostgreSQL schema directly from `information_schema` at runtime.
+
+**Files added:**
+- `lib/database-schema.ts` — shared types (`SchemaTable`, `SchemaForeignKey`, `SchemaResponse`) + `buildMermaidErDiagram()` + `filterVisibleTables()`. Imported by both server route and client page.
+- `app/api/admin/database/schema/route.ts` — superadmin-only `GET`; queries `information_schema.columns` + FK constraints via `prisma.$queryRaw`; maps PG types to Mermaid-friendly types; generates full `erDiagram` string.
+- `app/admin/database/page.tsx` — renders the erDiagram using same Mermaid lazy-import pattern as `ArchitectureDiagram.tsx`; search filter narrows to matching tables + their 1-hop FK neighbors; re-renders client-side on filter change without refetching.
+- `__tests__/api/admin/database-schema.test.ts` — 17 tests covering auth, response shape, type mapping, nullable, FK relationships, mermaid generation, and `buildMermaidErDiagram` filtering.
+
+**Files modified:**
+- `app/admin/layout.tsx` — added `database` icon + `{ label: 'Database', href: '/admin/database', icon: 'database' }` nav item after `Data`.
+- `__tests__/mocks/handlers.ts` — added MSW handlers for `GET /api/notebook/:nodeId/contacts` and `POST /api/notebook/:nodeId/contacts` (missing from prior contact model migration).
+- `__tests__/lib/password.test.ts` — increased bcrypt test timeouts to 30s (was timing out under full-suite CPU load at 5s default).
+
+**Pre-existing failures fixed (3 root causes from April 11 contact model work):**
+1. `AccountDetail.test.tsx` — MSW handler missing for `GET /api/notebook/:id/contacts` (new route had no mock)
+2. `stakeholder-map.test.ts` + `intelligence-features.test.ts` — pass when run in isolation; were failing under full-suite mock pollution
+3. `password.test.ts` — bcrypt timeout under load; increased to 30s
+
+### Tests
+2579 passing · 0 failing (206 files). Up from 2385.
 
 ---
 
@@ -37,6 +64,38 @@ Returns `{ accountsProcessed, groupsFound, contactsRemoved }`.
 2. `POST /api/admin/migrate-opp-contacts` — move remaining opp-level contacts up
 
 **Tests:** 2385 passing · 0 failing (198 files)
+
+---
+
+## Session: April 11, 2026 (addendum 9) — Test coverage + Contact model migration fixes
+
+**Goal:** Maximize test coverage; fix all test failures from Contact model migration.
+
+**New test files (179 new tests):**
+- `__tests__/lib/deal-context.test.ts` — 31 tests, 99.5% coverage (was 24%)
+- `__tests__/lib/expo-push.test.ts` — 17 tests, 100% coverage (was 48%)
+- `__tests__/lib/auth-helpers.test.ts` — 18 tests (was 0%)
+- `__tests__/lib/attachment-context.test.ts` — 16 tests
+- `__tests__/lib/email.test.ts` — 16 tests (was 3%)
+- `__tests__/lib/litellm-client.test.ts` — extended to 34 tests (was partial)
+- `__tests__/api/route-coverage-enhancements.test.ts` — 16 API route tests
+- `__tests__/components/AIAnalysisOverlay.test.tsx` — 25 tests (new component)
+- `__tests__/components/ActionItemsReviewModal.test.tsx` — 24 tests
+- `__tests__/components/TranscriptAnalyzer.test.tsx` — 22 tests
+
+**Fixed 36 test failures from Contact model migration (other session):**
+- `dedup-contacts.test.ts` — rewrote for `prisma.contact.findMany` (route was fully migrated away from NotebookNode)
+- `migrate-opp-contacts.test.ts` — rewrote for verification-only endpoint shape
+- `contact-helpers.test.ts` — updated mock contacts to use Contact first-class fields
+- `OrgChart.test.tsx` — updated makeContact() for Contact model, `pocRole` camelCase
+- `notebook-poc.test.ts`, `stakeholder-map.test.ts`, `agent-routes.test.ts`, `intelligence-features.test.ts` — added `prisma.contact` + `contact-helpers` mocks
+
+**Coverage improvement:** 53.3% → 54.1% (limited by large component files still untested)
+**High-value gains:** `deal-context.ts` 24%→99.5%, `expo-push.ts` 48%→100%, `email.ts` 3%→38%
+
+**Tests:** 2579 passing · 0 failing (206 files)
+**TypeScript:** Clean
+**Commit:** `bf770d3` — pushed to main
 
 ---
 
