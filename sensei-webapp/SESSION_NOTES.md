@@ -1,22 +1,66 @@
 # senSEi — Session Notes
-_Last updated: April 11, 2026 (addendum 4)_
+_Last updated: April 11, 2026 (addendum 6)_
 _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1.md_
 
 ## ⟶ What's Next
-- [ ] **Overlay Part B** — Non-blocking AIAnalysisOverlay: add `stage` field to AIJob, stage updates in analyze-worker, mini-panel UI with live elapsed timer
-- [ ] **Overlay Part C+D** — Pre-analysis warnings (long transcript notice, recent analysis exists) + action item review countdown in TranscriptAnalyzer
+- [x] **Overlay Part B** — mini-panel after 3s, elapsed timer ✓
+- [x] **Overlay Part C+D** — pre-analysis warnings + 10s review countdown ✓
 - [ ] **Overlay Part E+F** — Results diff panel ("what changed") + error categories (VPN check, parse failure, rate limit)
 - [ ] **Staging environment** — RDS `sensei-db-staging`, ECS service `sensei-webapp-staging`, ALB rule, `staging.se-n-sei.com` DNS
 - [ ] **Bug Fix Agent** — EC2 daemon, `scripts/bug-agent.ts`, admin UI badges + PR links, schema 3 fields
 - [ ] **Live Support Agent** — `/api/agent/support`, Support tab in AICopilotPanel
 - [ ] **POC Fields Rework** — auto-update after meetings, 8 new fields, completeness score
-- [ ] Contact management Phase 2: show `signals` in contact sidebar, render `poc_role` badge in OrgChart
-- [ ] Contact management Phase 3: Contacts tab on AccountDetail with "In Deals" column
+- [x] Contact management Phase 2: signals in contact sidebar, poc_role badge in OrgChart ✓
+- [x] Contact management Phase 3: Contacts tab on AccountDetail ✓
 - [ ] Andy March: whitelist `52.206.25.250` at llm.atko.ai + register OIDC app in demo.okta.com
 - [ ] Sean Newell TDI meeting — bring `/prod-readiness` PDF (local, print before meeting)
 - [ ] File provisional patent — route IDF to Okta IP counsel via Sean/Joel
 - [ ] Gong API credentials — Sean to arrange with Okta Gong workspace admin
 _Updated: April 11, 2026_
+
+---
+
+## Session: April 11, 2026 (addendum 6) — Overlay Rework Parts B, C+D
+
+### Part B — Non-blocking overlay mini-panel
+
+`AIAnalysisOverlay` rewritten: full-screen for first 3s, then collapses to a fixed bottom-right mini-panel (`position: fixed`) so users can keep working while analysis runs in background. Mini-panel shows title + stage (`Preparing` 0–8s / `AI analyzing — Xs elapsed` 8s+) + pulsing dot. Elapsed timer ticks every second. Hint text: "Working in background — you can keep using senSEi". No schema changes.
+
+### Part C — Pre-analysis warnings
+
+Two inline banners shown above the Analyze button when status is idle:
+- **Amber**: if transcript > 15,000 chars → "Long transcript (~N min) — analysis may take 2–3 minutes"
+- **Blue**: if already analyzed → "Already analyzed — re-analyzing will update existing results"
+
+### Part D — 10-second countdown review modal
+
+Replaced silent `autoConfirmTodos` call in `processResult` with `setReviewModalTodos` — action items now always show the `ActionItemsReviewModal`. New `autoAcceptSeconds={10}` prop added to the modal: shows "Auto-accepting in Xs" banner with a "Review" button to stop the countdown. If user doesn't interact, all items are accepted after 10s. Any interaction (click, input change) stops the countdown permanently.
+
+**Tests:** 2369 passing · 0 failing (196 files)
+**TypeScript:** Clean
+**Commits:** `c4a30ef` (Part B) · `1b61676` (Parts C+D) — both pushed to main, ECS auto-deploy triggered
+
+---
+
+## Session: April 11, 2026 (addendum 5) — Contact management Phase 2 + 3
+
+### What was built
+
+**Phase 2 — UI enhancements:**
+
+| File | Change |
+|---|---|
+| `components/OrgChart.tsx` | Added `POC_ROLE_LABEL` map. `poc_role` badge rendered inline with the role pill (flex row). `hasAnyRole` and flat grid filter now also check `poc_role` so contacts enriched by poc/extract show up even without a stakeholder-map role. |
+| `components/NotebookPage.tsx` | Added AI intel block in `ContactPanel` — shows role badge, poc_role badge, sentiment indicator, and signals quote when present. All conditional: only renders when AI has populated at least one field. |
+
+**Phase 3 — Contacts tab:**
+
+| File | Change |
+|---|---|
+| `components/AccountDetail.tsx` | New "Contacts (N)" tab alongside Overview and Power Map. State type widened to include 'contacts'. Tab content: enriched contact cards showing name, title, email, sentiment indicator, role badge (green), poc_role badge (grey). Clicking navigates to that contact's detail panel. |
+
+**Tests:** 2369 passing · 0 failing (196 files)
+**TypeScript:** Clean
 
 ---
 

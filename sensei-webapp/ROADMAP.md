@@ -4,6 +4,9 @@
 
 ## ✅ Completed
 
+### AI Analysis Overlay Rework Parts B + C + D — April 11, 2026
+**Part B:** `AIAnalysisOverlay` non-blocking — full-screen for 3s then collapses to fixed bottom-right mini-panel with title + stage + live elapsed timer. Users can keep working while analysis runs. **Part C:** Pre-analysis warning banners: amber notice for long transcripts (>15k chars) with estimated time, blue notice if already analyzed. **Part D:** Action items now always show `ActionItemsReviewModal` with 10-second auto-accept countdown instead of silent auto-confirm. User can click "Review" to stop countdown and make individual decisions. 2369 passing.
+
 ### AI Analysis Overlay Rework Part A — Full Transcript, No Timeouts — April 11, 2026
 Removed all transcript truncation (`smartTruncate`, `capTranscripts`) and `AbortController` timeouts from all AI routes. Full transcript context sent to LLM every time — Claude's 200K window makes truncation unnecessary and it was silently degrading analysis quality. Timeouts removed because ECS Fargate has no function timeout limit (unlike Vercel's 60s). `analyze-worker` `maxDuration` raised 240→600. Affects: `analyze-worker`, `analyze-bv`, `analyze-com`, `analyze-state`, `analyze-presales`, `litellm-client`. 2365 passing.
 
@@ -545,22 +548,19 @@ Everything below is deferred until after the Okta go-live. No new features until
 
 ### Contact Management Phase 2 — UI Enhancements
 
-**Status:** Scoped — April 11, 2026
+**Status:** ✅ Shipped — April 11, 2026
 
-**What was done (Phase 1):** `lib/contact-helpers.ts` — shared dedup/filter helpers. Both stakeholder-map and poc/extract now: filter Okta employees, create contacts at account level, use email-first dedup. 2365 tests passing.
-
-**Phase 2 scope:**
-1. Show `signals` field in contact sidebar panel (`NotebookPage.tsx`) — currently extracted but never displayed
-2. Render `poc_role` badge in `OrgChart.tsx` alongside `role` — two agent pipelines now populate both fields on the same contact node
-3. Email extraction in stakeholder-map already prompts the LLM — test real-world extraction rate after pilot
+1. `OrgChart.tsx` — `poc_role` badge inline with role pill. `hasAnyRole` and flat-grid filter now also check `poc_role`.
+2. `NotebookPage.tsx` (ContactPanel) — AI intel block: role badge, poc_role badge, sentiment indicator, signals quote. All conditional.
+3. Email extraction live in stakeholder-map prompt — real-world extraction rate TBD from pilot data.
 
 ---
 
 ### Contact Management Phase 3 — Contacts Tab
 
-**Status:** Scoped — April 11, 2026
+**Status:** ✅ Shipped — April 11, 2026
 
-New "Contacts" tab on `AccountDetail` listing all contacts with: name, title, email, role, poc_role, "In Deals" count (how many opportunities under this account reference this contact in meeting attendees). Enables SEs to see their full coverage without opening each opportunity.
+`AccountDetail.tsx` — new "Contacts (N)" tab. Enriched cards: name, title, email, sentiment indicator, role badge, poc_role badge. Clickable rows navigate to contact detail. "In Deals" column deferred (needs a dedicated query — not in scope for Phase 3).
 
 ---
 
