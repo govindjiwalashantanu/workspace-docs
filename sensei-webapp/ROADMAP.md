@@ -4,6 +4,9 @@
 
 ## ✅ Completed
 
+### AI Analysis Overlay Rework Part A — Full Transcript, No Timeouts — April 11, 2026
+Removed all transcript truncation (`smartTruncate`, `capTranscripts`) and `AbortController` timeouts from all AI routes. Full transcript context sent to LLM every time — Claude's 200K window makes truncation unnecessary and it was silently degrading analysis quality. Timeouts removed because ECS Fargate has no function timeout limit (unlike Vercel's 60s). `analyze-worker` `maxDuration` raised 240→600. Affects: `analyze-worker`, `analyze-bv`, `analyze-com`, `analyze-state`, `analyze-presales`, `litellm-client`. 2365 passing.
+
 ### Patent IDF — April 8–11, 2026
 23-innovation Invention Disclosure Form complete (`PATENT_IDF.md`). All sections filled including dates, public disclosure, prior art (verified — all Gemini patent numbers confirmed hallucinated, competitive product analysis accurate), defensibility tier analysis, draft claim language for Innovations 3 + 8, two-application filing strategy. Supporting files: `PATENT_PRIOR_ART_SEARCH.md`, `PATENT_PRIOR_ART_SEARCH_V2.md`, `PATENT_DISCLOSURE.md`. Ready to route to Okta IP counsel for provisional filing.
 
@@ -537,6 +540,27 @@ During a live mobile recording, AI detects signals in real time: compelling even
 ## 📋 Phase 2 — Post-Launch
 
 Everything below is deferred until after the Okta go-live. No new features until Share Link + Think Tank have shipped and the app is stable in production.
+
+---
+
+### Contact Management Phase 2 — UI Enhancements
+
+**Status:** Scoped — April 11, 2026
+
+**What was done (Phase 1):** `lib/contact-helpers.ts` — shared dedup/filter helpers. Both stakeholder-map and poc/extract now: filter Okta employees, create contacts at account level, use email-first dedup. 2365 tests passing.
+
+**Phase 2 scope:**
+1. Show `signals` field in contact sidebar panel (`NotebookPage.tsx`) — currently extracted but never displayed
+2. Render `poc_role` badge in `OrgChart.tsx` alongside `role` — two agent pipelines now populate both fields on the same contact node
+3. Email extraction in stakeholder-map already prompts the LLM — test real-world extraction rate after pilot
+
+---
+
+### Contact Management Phase 3 — Contacts Tab
+
+**Status:** Scoped — April 11, 2026
+
+New "Contacts" tab on `AccountDetail` listing all contacts with: name, title, email, role, poc_role, "In Deals" count (how many opportunities under this account reference this contact in meeting attendees). Enables SEs to see their full coverage without opening each opportunity.
 
 ---
 

@@ -1,16 +1,132 @@
 # senSEi — Session Notes
-_Last updated: April 11, 2026_
+_Last updated: April 11, 2026 (addendum 4)_
 _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1.md_
 
 ## ⟶ What's Next
-- [ ] Complete OCM install + `git config` to enable push to `atko-presales/sensei`
+- [ ] **Overlay Part B** — Non-blocking AIAnalysisOverlay: add `stage` field to AIJob, stage updates in analyze-worker, mini-panel UI with live elapsed timer
+- [ ] **Overlay Part C+D** — Pre-analysis warnings (long transcript notice, recent analysis exists) + action item review countdown in TranscriptAnalyzer
+- [ ] **Overlay Part E+F** — Results diff panel ("what changed") + error categories (VPN check, parse failure, rate limit)
+- [ ] **Staging environment** — RDS `sensei-db-staging`, ECS service `sensei-webapp-staging`, ALB rule, `staging.se-n-sei.com` DNS
+- [ ] **Bug Fix Agent** — EC2 daemon, `scripts/bug-agent.ts`, admin UI badges + PR links, schema 3 fields
+- [ ] **Live Support Agent** — `/api/agent/support`, Support tab in AICopilotPanel
+- [ ] **POC Fields Rework** — auto-update after meetings, 8 new fields, completeness score
+- [ ] Contact management Phase 2: show `signals` in contact sidebar, render `poc_role` badge in OrgChart
+- [ ] Contact management Phase 3: Contacts tab on AccountDetail with "In Deals" column
+- [ ] Andy March: whitelist `52.206.25.250` at llm.atko.ai + register OIDC app in demo.okta.com
 - [ ] Sean Newell TDI meeting — bring `/prod-readiness` PDF (local, print before meeting)
 - [ ] File provisional patent — route IDF to Okta IP counsel via Sean/Joel
-- [ ] Okta AWS provisioning — ECS Fargate + RDS + ECR via TDI
 - [ ] Gong API credentials — Sean to arrange with Okta Gong workspace admin
-- [ ] Innovations 6 & 7 dates in PATENT_IDF.md — fill in "first conceived" and "first real engagement"
-- [ ] 30-SE pilot list — get from Rick/Sean once infra is unblocked
 _Updated: April 11, 2026_
+
+---
+
+## Session: April 11, 2026 (addendum 4) — Overlay Rework Part A: remove truncation + timeouts
+
+### What was built
+
+**Part A of AI Analysis Overlay Rework** — full transcript context (no truncation), no LLM timeouts.
+
+**Root cause of prior analysis degradation:**
+- `smartTruncate` was cutting transcripts at 10K+5K chars — dropping critical deal context mid-sentence
+- `capTranscripts` was proportionally trimming transcripts across meetings — same problem
+- `AbortController` 90s timeouts were a Vercel constraint. On ECS Fargate there is no function timeout. Removing them lets long transcripts complete without error.
+- Claude 200K context window means truncation was never necessary
+
+**Changes:**
+
+| File | Change |
+|---|---|
+| `analyze-worker/route.ts` | Removed `smartTruncate`, sends full `transcript`. Removed `AbortController`. `maxDuration` 240→600. `calcMaxTokens` replaced with inline formula. |
+| `lib/litellm-client.ts` | Removed `AbortController` timeout entirely. Removed `timeoutMs` from `LiteLLMOptions` interface. |
+| `analyze-bv/route.ts` | Removed `capTranscripts` call and timer block |
+| `analyze-com/route.ts` | Removed `capTranscripts` + `calcMaxTokens`, removed AbortController, hardcoded `max_tokens: 6000` |
+| `analyze-state/route.ts` | Removed `capTranscripts` + `calcMaxTokens`, removed AbortController, hardcoded `max_tokens: 8000` |
+| `analyze-presales/route.ts` | Removed `calcMaxTokens` + `capTranscripts`, removed AbortController timeout block |
+| `lib/transcript-utils.ts` | Added deprecation comments to `smartTruncate` and `capTranscripts` (functions kept for backward compat) |
+
+**Tests:** 2365 passing · 0 failing (196 files)
+**TypeScript:** Clean
+**Commit:** `8baec62` — pushed to main, ECS auto-deploy triggered
+
+---
+
+## Session: April 11, 2026 (addendum 3) — Contact management Phase 1: dedup + Okta filter
+
+### What was built
+
+**Deep-dive + plan:** studied the full contact management system — stakeholder-map, poc/extract, OrgChart, fuzzyMatchContact, property coverage. Identified 15 gaps; built a 3-phase plan.
+
+**Phase 1 implemented:**
+
+| Change | File(s) |
+|---|---|
+| New `lib/contact-helpers.ts` | `isInternalContact()`, `matchContact()` (email-first, last+initial, levenshtein with length guard), `getAccountContacts()`, `findOrCreateContact()` |
+| Okta employee filter | Both `stakeholder-map` and `poc/extract` now skip contacts with `@okta.com`/`@auth0.com` email, name containing "Okta"/"Auth0", or Okta-brand title |
+| Email-first dedup | `stakeholder-map` now uses `matchContact()` instead of `fuzzyMatchContact()` — email match takes priority over name matching |
+| Account-level contacts | `poc/extract` now creates stakeholder contacts under the **account** node (via `node.parentId`), not the opportunity — eliminates the split between two contact pools |
+| Email extraction prompt | `stakeholder-map` system prompt updated: adds `email` field to the JSON schema and adds "CUSTOMER-SIDE ONLY" exclusion instruction for Okta employees |
+| Okta exclusion in poc_extract prompt | `lib/prompt-defaults.ts` Section 10 now explicitly says not to include `@okta.com`/`@auth0.com` employees in stakeholders |
+| Tightened `fuzzyMatchContact` | Raised levenshtein minimum threshold 0.5→0.65, added length guard (names must be >5 chars), levenshtein score 0.6→0.65 |
+| `LiteLLMOptions.timeoutMs` restored | ECS deployment removed AbortController from `callLiteLLM` but left routes passing `timeoutMs` — restored as accepted-but-ignored field |
+
+**Tests:** 4 failing tests written before implementation, all 4 now green. 25 new tests total across 4 files.
+**Test state:** 2365 passing · 0 failing (196 files)
+**TypeScript:** Clean
+
+---
+
+## Session: April 11, 2026 (addendum 2) — Fix: analysis results never show without page reload
+
+### Root cause
+`TranscriptAnalyzer` polls `GET /api/notebook/{nodeId}` after dispatching analysis. That endpoint returns properties as a Prisma relation **array** `[{key, value}]`. But the polling read `node?.properties?.summary` treating it as a flat object — `Array.summary` is always `undefined`. So polling never detected completion, `processResult` was never called, `invalidateQueries` never fired, and users had to reload to see results. The overlay also stayed up indefinitely.
+
+### Fix
+Added `getNodeProp(props, key)` helper in `TranscriptAnalyzer.tsx` that handles both array format (direct endpoint response) and flat format (React Query tree). Applied to both polling loops.
+
+### Tests added (5 + 1)
+- `MeetingDetail.test.tsx`: 4 new tests — Analysis Results section renders when summary/problems present, does NOT render when absent, all fields show correctly
+- `TranscriptAnalyzer.test.tsx`: 1 new timer-based test — overlay dismisses when poll returns array-format properties with summary (confirms fix, was timing out before)
+
+### Commit
+`079a388` — pushed to `origin/main`
+
+**Tests:** 2324 passing · 0 failing · TypeScript clean
+
+---
+
+## Session: April 11, 2026 (addendum) — Fix "Failed to parse AI response" across all 8 AI routes
+
+### Root cause
+The April 6 `parseLiteLLMJson` fix (balanced-brace walker) was only applied to `analyze-note`. The other 8 analysis routes still used the greedy regex `content.match(/\{[\s\S]*\}/)` which fails when Claude:
+- Appends trailing text after the closing brace
+- Wraps output in markdown code fences (```json\n...)
+
+Error log showed 194 open "Failed to parse AI response" errors. Preview confirmed the pattern: `` ```json\n\n {"summary": "This was an internal alignment...` ``
+
+### Fix
+Replaced old regex + repair loop in 8 routes with `parseLiteLLMJson<T>()`:
+- `app/api/notebook/[id]/analyze-worker/route.ts` — removed strip + greedy match + 7-close repair loop
+- `app/api/notebook/[id]/analyze-com/route.ts`
+- `app/api/notebook/[id]/analyze-state/route.ts` — removed strip + greedy match + 5-close repair loop
+- `app/api/notebook/[id]/analyze-presales/route.ts`
+- `app/api/notebook/[id]/followups/route.ts`
+- `app/api/agent/stakeholder-map/route.ts`
+- `app/api/agent/research/route.ts` — was matching `\[[\s\S]*\]` (array variant)
+- `app/api/notebook/[id]/poc/extract/route.ts` — in `callLLM()` helper
+
+### Test mock update (3 files)
+Changed `vi.mock('@/lib/litellm-client', () => ({ parseLiteLLMJson: vi.fn().mockReturnValue({}) }))` to `vi.fn().mockImplementation(actual.parseLiteLLMJson)` in:
+- `__tests__/api/notebook-analysis.test.ts`
+- `__tests__/api/notebook-poc.test.ts`
+- `__tests__/api/ai-job-tracking-routes.test.ts`
+
+This makes `parseLiteLLMJson` behave like the real parser in tests that control output via `global.fetch`, while still allowing `mockReturnValueOnce` overrides in analyze-note tests.
+
+### Test state
+- 2319 passing · 0 failing · TypeScript clean
+
+### Commit
+`17a8c67` — pushed to `origin/main` (Vercel auto-deploy triggered)
 
 ---
 
@@ -931,19 +1047,3 @@ Expanded the Playwright E2E suite from **22 spec files / ~400 tests** to **28 sp
 **Bug fixed:** `request.newContext()` → `request.newContext({ storageState: { cookies: [], origins: [] } })` across all specs that test unauthenticated access. This fixes ~30 previously broken tests that were getting 200 instead of 401.
 
 ### TypeScript: ✓ clean (0 errors)
-
----
-
-## Session: April 11, 2026 (addendum) — Fix "Failed to parse AI response" across all 8 AI routes
-
-### Root cause
-Greedy regex `content.match(/\{[\s\S]*\}/)` in 8 routes failed when Claude appended trailing text or wrapped output in markdown fences. 194 open errors in production.
-
-### Fix
-Replaced with `parseLiteLLMJson<T>()` (balanced-brace walker from `lib/litellm-client.ts`) in:
-analyze-worker, analyze-com, analyze-state, analyze-presales, followups, stakeholder-map, research, poc/extract.
-
-Updated 3 test files to use `vi.fn().mockImplementation(actual.parseLiteLLMJson)` so real parsing kicks in for fetch-controlled tests while `mockReturnValueOnce` still works for analyze-note tests.
-
-**Tests:** 2319 passing · 0 failing · TypeScript clean
-**Commit:** `17a8c67` on `main`
