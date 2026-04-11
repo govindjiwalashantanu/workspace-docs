@@ -1,11 +1,11 @@
 # senSEi — Session Notes
-_Last updated: April 11, 2026 (addendum 6)_
+_Last updated: April 11, 2026 (addendum 8)_
 _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1.md_
 
 ## ⟶ What's Next
 - [x] **Overlay Part B** — mini-panel after 3s, elapsed timer ✓
 - [x] **Overlay Part C+D** — pre-analysis warnings + 10s review countdown ✓
-- [ ] **Overlay Part E+F** — Results diff panel ("what changed") + error categories (VPN check, parse failure, rate limit)
+- [x] **Overlay Part E+F** — Results diff panel + error categories ✓
 - [ ] **Staging environment** — RDS `sensei-db-staging`, ECS service `sensei-webapp-staging`, ALB rule, `staging.se-n-sei.com` DNS
 - [ ] **Bug Fix Agent** — EC2 daemon, `scripts/bug-agent.ts`, admin UI badges + PR links, schema 3 fields
 - [ ] **Live Support Agent** — `/api/agent/support`, Support tab in AICopilotPanel
@@ -17,6 +17,62 @@ _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1
 - [ ] File provisional patent — route IDF to Okta IP counsel via Sean/Joel
 - [ ] Gong API credentials — Sean to arrange with Okta Gong workspace admin
 _Updated: April 11, 2026_
+
+---
+
+## Session: April 11, 2026 (addendum 9) — Contact dedup: fix repeated contacts
+
+### Root cause
+
+Race condition: `analyze-worker` triggers `poc/extract` and `stakeholder-map` concurrently after every meeting. Each agent calls `getAccountContacts` at the start, sees no existing contact, and creates a fresh node. Multiple agents running in parallel insert the same people multiple times.
+
+### What was built
+
+`POST /api/admin/dedup-contacts` — superadmin, idempotent. Groups account-level contact duplicates using two conservative rules: email exact match OR name exact match (if one has no email). Different emails = different people, never merged. Fuzzy name alone = not merged. Winner keeps the most non-empty properties; losers' missing fields are copied in, then losers are deleted.
+
+Returns `{ accountsProcessed, groupsFound, contactsRemoved }`.
+
+**Run order on production:**
+1. `POST /api/admin/dedup-contacts` — collapse account-level dupes first
+2. `POST /api/admin/migrate-opp-contacts` — move remaining opp-level contacts up
+
+**Tests:** 2385 passing · 0 failing (198 files)
+
+---
+
+## Session: April 11, 2026 (addendum 8) — Overlay Rework Part E+F
+
+**Part E — Results diff panel:** After analysis completes, green card fades in below the panel showing: ✓ Analysis complete — Xs · Summary updated · Action items N found — pending review · Opportunity N fields updated. Elapsed time tracked via `analysisStartRef`. Built from `processResult` data before `setStatus('success')`.
+
+**Part F — Error categories:** `TranscriptAnalyzer` catch block now classifies errors:
+- HTTP 429 → "Too many requests — wait 60s and retry"
+- HTTP 502/503 or network error → "AI service unreachable — check VPN, then retry"
+- Parse/JSON error → auto-retry once silently, then "Response malformed — please retry"
+- `autoRetriedRef` (ref, not state) avoids stale closure loops
+
+**Tests:** 2385 passing · 0 failing (198 files)
+**TypeScript:** Clean
+**Commit:** `0f066b1` — pushed to main, ECS auto-deploy triggered
+
+---
+
+## Session: April 11, 2026 (addendum 7) — Contact migration: fix opp-level contacts
+
+### What was built
+
+`POST /api/admin/migrate-opp-contacts` — superadmin route that fixes all existing opportunity-level contacts across all orgs.
+
+**Logic (same three cases as Phase 1):**
+- **MOVE** — no existing account-level contact found → `UPDATE parentId = accountId`
+- **MERGE** — email/name match found at account level → copy missing properties onto it, delete the opp-level duplicate
+- **DELETE** — Okta/vendor employee (`@okta.com`, `@auth0.com`, "Okta" in name/title) → delete without migrating
+
+Uses `isInternalContact`, `matchContact`, `getAccountContacts` from `lib/contact-helpers` — same dedup logic as the live routes. Idempotent: safe to run multiple times. Returns `{ moved, merged, deleted, skipped, orgsProcessed }`.
+
+**Tests:** 7 new tests — 403 auth, all-zeros on empty data, move case, merge case, Okta-employee delete, orphaned-opp skip, idempotency.
+
+**Tests:** 2376 passing · 0 failing (197 files)
+**TypeScript:** Clean
 
 ---
 

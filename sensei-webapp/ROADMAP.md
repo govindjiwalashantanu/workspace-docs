@@ -4,6 +4,9 @@
 
 ## ✅ Completed
 
+### AI Analysis Overlay Rework Parts E + F — April 11, 2026
+**Part E:** Results diff panel fades in after analysis — green card showing elapsed time, summary updated, action item count, opportunity field changes. Built in `processResult` before status=success. **Part F:** Error categorization in `TranscriptAnalyzer`: 429 → rate limit message with wait hint; 502/503/network → VPN check message; parse/JSON error → silent auto-retry once then human-readable message (uses `autoRetriedRef` to avoid stale closure loop). 2385 passing.
+
 ### AI Analysis Overlay Rework Parts B + C + D — April 11, 2026
 **Part B:** `AIAnalysisOverlay` non-blocking — full-screen for 3s then collapses to fixed bottom-right mini-panel with title + stage + live elapsed timer. Users can keep working while analysis runs. **Part C:** Pre-analysis warning banners: amber notice for long transcripts (>15k chars) with estimated time, blue notice if already analyzed. **Part D:** Action items now always show `ActionItemsReviewModal` with 10-second auto-accept countdown instead of silent auto-confirm. User can click "Review" to stop countdown and make individual decisions. 2369 passing.
 
