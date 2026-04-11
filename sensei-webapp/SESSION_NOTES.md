@@ -931,3 +931,19 @@ Expanded the Playwright E2E suite from **22 spec files / ~400 tests** to **28 sp
 **Bug fixed:** `request.newContext()` → `request.newContext({ storageState: { cookies: [], origins: [] } })` across all specs that test unauthenticated access. This fixes ~30 previously broken tests that were getting 200 instead of 401.
 
 ### TypeScript: ✓ clean (0 errors)
+
+---
+
+## Session: April 11, 2026 (addendum) — Fix "Failed to parse AI response" across all 8 AI routes
+
+### Root cause
+Greedy regex `content.match(/\{[\s\S]*\}/)` in 8 routes failed when Claude appended trailing text or wrapped output in markdown fences. 194 open errors in production.
+
+### Fix
+Replaced with `parseLiteLLMJson<T>()` (balanced-brace walker from `lib/litellm-client.ts`) in:
+analyze-worker, analyze-com, analyze-state, analyze-presales, followups, stakeholder-map, research, poc/extract.
+
+Updated 3 test files to use `vi.fn().mockImplementation(actual.parseLiteLLMJson)` so real parsing kicks in for fetch-controlled tests while `mockReturnValueOnce` still works for analyze-note tests.
+
+**Tests:** 2319 passing · 0 failing · TypeScript clean
+**Commit:** `17a8c67` on `main`
