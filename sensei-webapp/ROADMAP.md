@@ -4,6 +4,9 @@
 
 ## ✅ Completed
 
+### Product Knowledge Bases — All 7 Okta Products — April 12, 2026
+`lib/poc-product-guides.ts` — comprehensive reference per product: component tables, use case patterns, discovery questions, Mermaid class mappings, honest capability assessment. Products: WIC, LCM, OCI, CIC/Auth0, PAM, ODA, OIG. Injected into every `poc/generate` call as PRODUCT KNOWLEDGE REFERENCE — AI uses accurate component names and realistic flows. `architectureDiagram` field added to PocDraft — AI generates Mermaid flowchart of customer identity architecture, rendered in the export page. Full Mermaid standards (7 color classes, anti-overlap rules, max 14 nodes) embedded in poc_generate system prompt. Skill reference files saved to `.claude/skills/okta/references/`. 2572 passing.
+
 ### POC Guide Rework — AI Generation + Product Line Templates — April 12, 2026
 Complete rework of the POC section. **7 product line templates** (WIC, CIC, OCI, OIG, PAM, ODA, LCM) each with use cases, success criteria, features, environment checklist. `POST /api/notebook/[id]/poc/generate` generates a complete customer-tailored guide from template + CoM fields + transcripts — Gemini 2.5-pro first, Claude fallback. All 11 POC sections filled (exec summary, background, arch notes, blockers, environment, use cases, criteria, milestones, features, docs, vendor team). Empty state shows product line cards when no POC started. ✦ Regenerate Guide button in active state. Locked fields respected. poc_generate system prompt requires AI to replace all generic text with customer-specific content. 2572 passing.
 

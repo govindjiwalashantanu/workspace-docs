@@ -1,5 +1,5 @@
 # senSEi — Session Notes
-_Last updated: April 12, 2026 (POC Guide rework)_
+_Last updated: April 12, 2026 (product knowledge bases)_
 _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1.md_
 
 ## ⟶ What's Next
@@ -18,6 +18,31 @@ _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1
 - [ ] Gong API credentials — Sean to arrange with Okta Gong workspace admin
 - [x] **POC Guide rework** — product line cards, AI generation, all sections filled ✓
 _Updated: April 12, 2026_
+
+---
+
+## Session: April 12, 2026 (addendum) — Product knowledge bases for all 7 Okta product lines
+
+**`lib/poc-product-guides.ts`** — comprehensive reference file per product, injected into every `poc/generate` call:
+
+| Product | Key content |
+|---|---|
+| **WIC** | Components: SSO, AMFA, UD, LCM, Group Rules, FastPass, Device Trust, OAG, AD agent. Patterns: SSO, MFA, Joiner/Mover/Leaver, SSPR. |
+| **LCM** | Components: HRIS connectors, SCIM, Group Rules, Profile Mastering, Workflows. Patterns: JML automation, SCIM provisioning. |
+| **OCI** | Components: Sign-In Widget, Social IdPs, B2B Federation, JIT, OIDC/OAuth 2.0, Delegated Admin, Workflows, Hooks. Patterns: customer registration, B2B federation, API access. |
+| **CIC/Auth0** | Components: Universal Login, Actions, Organisations, Passwordless, M2M, FGA/OpenFGA, Attack Protection. Patterns: multi-tenant B2B, custom logic, fine-grained authz. |
+| **PAM** | Components: ASA server agent/gateway/client, PAM Vault, JIT workflows, session recording, credential rotation, cloud integration. Patterns: JIT SSH/RDP, vaulting, cloud access. |
+| **ODA** | Components: FastPass, Okta Verify, Device Trust, MDM integration, FIDO2 passkeys, OAG, Desktop MFA. Patterns: passwordless, device trust enforcement, legacy app access. |
+| **OIG** | Components: Access Certifications, RCAR, Entitlement Management, Workflows, LCM, Group Rules. Patterns: certifications, access requests, SoD. |
+
+**`architectureDiagram` field** added to PocDraft — generate route asks AI to produce a Mermaid flowchart of the customer's identity architecture using accurate component class assignments. Saved as `poc_arch_diagram`, rendered in the POC guide export page.
+
+**`poc_generate` system prompt** updated with full Mermaid color class palette, anti-overlap rules, max 14 nodes, and architecture diagram instructions.
+
+**Skill reference files** saved to `.claude/skills/okta/references/` — 7 product files + mermaid-standards.md.
+
+**Tests:** 2572 passing · 0 failing
+**Commit:** `5abb9fc` — pushed to main, ECS auto-deploy triggered
 
 ---
 
