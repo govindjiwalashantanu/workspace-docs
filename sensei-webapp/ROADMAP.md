@@ -4,6 +4,15 @@
 
 ## ✅ Completed
 
+### POC Guide Rework — AI Generation + Product Line Templates — April 12, 2026
+Complete rework of the POC section. **7 product line templates** (WIC, CIC, OCI, OIG, PAM, ODA, LCM) each with use cases, success criteria, features, environment checklist. `POST /api/notebook/[id]/poc/generate` generates a complete customer-tailored guide from template + CoM fields + transcripts — Gemini 2.5-pro first, Claude fallback. All 11 POC sections filled (exec summary, background, arch notes, blockers, environment, use cases, criteria, milestones, features, docs, vendor team). Empty state shows product line cards when no POC started. ✦ Regenerate Guide button in active state. Locked fields respected. poc_generate system prompt requires AI to replace all generic text with customer-specific content. 2572 passing.
+
+### Schema Hardening (15-issue review) — April 15, 2026
+Full schema audit of all 29 models. Applied: dropped `OrganizationMember.isAdmin` (redundant column), `NodeCustomProp @@unique`, `Board→Organization CASCADE`, `Contact name index`, `Feature userId index`. Code: Conversation find-or-create-latest (stops unbounded duplication), OIDC initial-setup secret validation, SysLog 30-day TTL cleanup cron. Deferred (data migrations): `dueDate` String→DateTime, `ReleaseNote` features/fixes String→Json, `Contact` NULL email partial index, `AgentSuggestion`/`MeetingActionItem` FK relations. 2572 passing, TypeScript clean.
+
+### Database Schema Viewer (ER Diagram) — April 15, 2026
+New `Admin → Database` page rendering a live Mermaid `erDiagram` from `information_schema` at runtime. Shows all tables, columns with PG→Mermaid type mapping, PK/FK labels, and FK relationship arrows. Search filter narrows to matching tables + 1-hop FK neighbors with client-side re-render. Superadmin-only. `lib/database-schema.ts` is a shared server+client utility. 17 new tests. 2579 passing.
+
 ### AI Analysis Overlay Rework Parts E + F — April 11, 2026
 **Part E:** Results diff panel fades in after analysis — green card showing elapsed time, summary updated, action item count, opportunity field changes. Built in `processResult` before status=success. **Part F:** Error categorization in `TranscriptAnalyzer`: 429 → rate limit message with wait hint; 502/503/network → VPN check message; parse/JSON error → silent auto-retry once then human-readable message (uses `autoRetriedRef` to avoid stale closure loop). 2385 passing.
 

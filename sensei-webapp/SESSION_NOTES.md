@@ -1,22 +1,113 @@
 # senSEi — Session Notes
-_Last updated: April 15, 2026 (addendum — optimization pass)_
+_Last updated: April 12, 2026 (POC Guide rework)_
 _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1.md_
 
 ## ⟶ What's Next
 - [x] **Database ER Diagram** — Admin → Database, live schema from information_schema, Mermaid erDiagram, table filter ✓
+- [x] **Schema review + 15-issue fix** — isAdmin dropped, cascades, NodeCustomProp unique, indexes, Conversation dedup fix, SysLog TTL cron ✓
+- [x] **Apply schema changes to RDS** — all 6 changes confirmed: isAdmin dropped, NodeCustomProp unique, Board+NotebookNode CASCADE, Contact+Feature indexes ✓
 - [ ] **Database visualizer remaining tabs** — Table Stats, Data Browser, Query Runner (approved scope, not yet built)
-- [ ] **Add release note** — "Database Schema Viewer" via Admin → Releases when server is running
+- [ ] **Add release notes** — "Database Schema Viewer", "Schema hardening" via Admin → Releases when server is running
 - [ ] **Staging environment** — RDS `sensei-db-staging`, ECS service `sensei-webapp-staging`, ALB rule, `staging.se-n-sei.com` DNS
 - [ ] **Bug Fix Agent** — EC2 daemon, `scripts/bug-agent.ts`, admin UI badges + PR links, schema 3 fields
 - [ ] **Live Support Agent** — `/api/agent/support`, Support tab in AICopilotPanel
 - [ ] **POC Fields Rework** — auto-update after meetings, 8 new fields, completeness score
-- [x] Contact management Phase 2: signals in contact sidebar, poc_role badge in OrgChart ✓
-- [x] Contact management Phase 3: Contacts tab on AccountDetail ✓
 - [ ] Andy March: whitelist `52.206.25.250` at llm.atko.ai + register OIDC app in demo.okta.com
 - [ ] Sean Newell TDI meeting — bring `/prod-readiness` PDF (local, print before meeting)
 - [ ] File provisional patent — route IDF to Okta IP counsel via Sean/Joel
 - [ ] Gong API credentials — Sean to arrange with Okta Gong workspace admin
-_Updated: April 15, 2026_
+- [x] **POC Guide rework** — product line cards, AI generation, all sections filled ✓
+_Updated: April 12, 2026_
+
+---
+
+## Session: April 12, 2026 — POC Guide rework + product line templates
+
+### What was built
+
+**Full POC Guide rework** — one-click AI generation for every Okta product line.
+
+**7 product line templates** (`lib/poc-templates.ts`): WIC, CIC, OCI, OIG, PAM, ODA, LCM — each with use cases, success criteria, features, environment checklist, and documentation links. `matchTemplate()` auto-detects from opportunity productLine.
+
+**`POST /api/notebook/[id]/poc/generate`** — new AI generation route:
+- Gemini 2.5-pro first (1M context), Claude fallback
+- Input: template + CoM fields (PBO, pain, compelling event, metrics) + transcripts (optional) + contacts
+- Output: complete PocDraft — all 11 fields filled (exec summary, background, arch notes, blockers, environment, use cases + criteria, milestones, features, docs, vendor team)
+- Respects `poc_locked_fields` — never overwrites user-edited sections
+- Auto-advances `poc_status` to 'planning' when complete
+
+**POCGuide component rework**:
+- Empty state (not started, no content): product line card grid with icons, description, duration, "Generate Guide →"
+- Active state: ✦ Regenerate Guide button (blue gradient) shown alongside Extract
+- Poll flow: 202 → job poll every 3s → overlay while generating → sections populate
+- Sections hidden until POC started (empty state shown instead)
+
+**POC format** (from OIG document reference):
+- Phase boxes for use cases (numbered circles, blue gradient headers)
+- Timeline strip for milestones (done/future color coding)
+- Danger callout for blockers
+- Dark section-intro box for scope summary
+
+**Apply template** (quick fill without AI): `POST /api/notebook/[id]/poc/apply-template` + ⊞ Load Template UI
+
+**Build steps coverage**: `poc_capability_build_steps` is a SEPARATE pass via "Generate Build Steps" button — it writes step-by-step Okta admin console navigation. The generate route fills structural content; build steps run independently.
+
+**Tests:** 2572 passing · 0 failing (204 files)
+**TypeScript:** Clean
+**Commit:** `9d23574` — pushed to main, ECS auto-deploy triggered
+
+---
+
+## Session: April 15, 2026 (addendum 3) — RDS migration + release notes
+
+Applied all schema changes to RDS via SSM tunnel (`~/tunnel-rds.sh` → localhost:5433). 6/6 confirmed:
+- `OrganizationMember.isAdmin` dropped
+- `NodeCustomProp @@unique([nodeId, key])` added
+- `Board → Organization` ON DELETE CASCADE
+- `NotebookNode → Organization` ON DELETE CASCADE
+- `Contact @@index([accountId, name])`
+- `Feature @@index([userId])`
+
+Release notes 1.4.0 + 1.4.1 seeded to local, Supabase, and RDS (were already present on RDS).
+Script: `scripts/seed-release-notes.ts`
+Migration SQL: `scripts/rds-schema-migration-2026-04.sql`
+
+---
+
+## Session: April 15, 2026 (addendum 2) — Schema review + 15-issue hardening pass
+
+### What was changed
+
+Full schema design review (29 models) → 15 issues found. Fixed what's safe; deferred what needs data migration.
+
+**Schema changes applied to Supabase (targeted SQL, not `--accept-data-loss`):**
+- `OrganizationMember.isAdmin` column **dropped** — redundant with `role === 'admin'`; all auth was already JWT-session-based
+- `NodeCustomProp @@unique([nodeId, key])` — prevents duplicate custom props per node
+- `Board → Organization` ON DELETE CASCADE — org deletion cascades to boards
+- `Contact @@index([accountId, name])` — speeds up name-matching in `matchContact()`
+- `Feature @@index([userId])` — index on soft-ref userId
+- `NotebookNode → Organization` CASCADE — **pending**: Supabase pooler timed out on large-table FK alter; schema is correct, apply to RDS manually on DB switch
+
+**Code changes:**
+- Removed `isAdmin` from all 6 Prisma write/read sites (`lib/auth.ts`, `app/api/auth/register`, `mobile-okta`, `admin/users/*`, `lib/admin-helpers.ts`) + UI type definitions + toggle button logic (fixed operator precedence bug)
+- `app/api/chat/route.ts` — Conversation find-or-create-latest: when no conversationId provided, reuse most recent instead of always creating new (was causing unbounded growth)
+- `app/api/admin/okta-config/route.ts` — OIDC initial setup now requires clientSecret if no existing secret in DB
+- `app/api/cron/cleanup-syslogs/route.ts` — new cron endpoint, runs daily 3:17am UTC, deletes SysLog rows older than 30 days
+- `vercel.json` — added `cleanup-syslogs` cron entry
+
+**Schema TODO comments added for deferred items:**
+- `AgentSuggestion.nodeId` / `MeetingActionItem.cardId` — FK blocked by orphaned data risk
+- `ReleaseNote.features/fixes` — needs `ALTER ... TYPE jsonb USING col::jsonb` migration
+- `Card.dueDate` / `Todo.dueDate` — String → DateTime needs ~8-file code migration
+- `Contact` NULL email dedup — needs raw partial index (`WHERE email IS NOT NULL`)
+- `AuditLog.userId` — intentionally unlinked, now documented in schema
+
+**Not changed (confirmed correct):**
+- `oidcClientSecret` — already encrypted with `lib/encrypt.ts` (my review was wrong)
+- `Card.account` / `Card.opportunity` strings — actively used for display; kept intentionally
+
+### Tests
+2572 passing · 0 failing (204 files). TypeScript clean.
 
 ---
 
