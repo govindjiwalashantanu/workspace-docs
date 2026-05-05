@@ -4,6 +4,9 @@
 
 ## ✅ Completed
 
+### Code Review Cleanup (27 findings) — May 4, 2026
+All 27 code review findings resolved across 5 batches. Magic number constants extracted to `lib/transcript-utils.ts` and `lib/health-score.ts`. Silent catch blocks now log via `logger.error`. `SpeechRecognition` type corrected + global declaration added. `Promise.allSettled().catch()` unreachable branch fixed; save status now set only on mutation success. `toMap()` extracted to `lib/agent-helpers.ts` (shared across 8 routes); `research` + `followup` + `next-action` + `stage-actions` migrated off manual fetch loops to shared `callLiteLLM()`. 7 test files updated for new mock exports; 4 assertions updated for changed 503→202/200 behavior. 2979 passing, TypeScript clean.
+
 ### Product Knowledge Bases — All 7 Okta Products — April 12, 2026
 `lib/poc-product-guides.ts` — comprehensive reference per product: component tables, use case patterns, discovery questions, Mermaid class mappings, honest capability assessment. Products: WIC, LCM, OCI, CIC/Auth0, PAM, ODA, OIG. Injected into every `poc/generate` call as PRODUCT KNOWLEDGE REFERENCE — AI uses accurate component names and realistic flows. `architectureDiagram` field added to PocDraft — AI generates Mermaid flowchart of customer identity architecture, rendered in the export page. Full Mermaid standards (7 color classes, anti-overlap rules, max 14 nodes) embedded in poc_generate system prompt. Skill reference files saved to `.claude/skills/okta/references/`. 2572 passing.
 
@@ -425,10 +428,10 @@ Before expanding beyond the 30-SE pilot:
 
 Two external collaboration features. Building Share Link first (no new deps), Think Tank second.
 
-#### Share Link ✅ Shipped March 18, 2026
-A read-only public link to any notebook node. Anyone can view it. Registered sensei users can import it as a new standalone node.
+#### Share Link ✅ Shipped March 18, 2026 · Extended April 19, 2026
+A read-only public link to any notebook node. Anyone can view it. Registered sensei users can import it as a new standalone node. Opportunity shares include a "Download for AI" button to export a clean `.md` file for ChatGPT/Gemini analysis.
 
-**Delivered:**
+**Delivered (March 18):**
 - `ShareToken` Prisma model — 256-bit entropy token, configurable expiry, view count, cascade delete
 - `GET/POST/DELETE /api/notebook/[id]/share-link` — check/generate/revoke (owner only)
 - `GET /api/share/[token]` — public node data API (no auth required)
@@ -437,6 +440,13 @@ A read-only public link to any notebook node. Anyone can view it. Registered sen
 - `useGetShareLink`, `useCreateShareLink`, `useRevokeShareLink` hooks
 - NotebookShareDialog extended with share link section (expiry picker, copy, revoke)
 - 26 new tests passing, Playwright visual verification done
+
+**Extended (April 19) — Opportunity Markdown Export:**
+- `GET /api/share/[token]/md` — public markdown export (title, metadata, CoM, Mantra, Presales, State Analysis, Meeting Summaries newest-first). HTML/attribution stripped. Filename sanitized.
+- `GET /api/share/[token]` — now returns child meeting summaries for opportunity nodes
+- Share page now renders Meeting Summaries collapsible section
+- "⬇ Download for AI" button (opportunity-only) on the share page header
+- 16 new tests; 2869 total passing, TypeScript clean
 
 ---
 
@@ -774,6 +784,41 @@ A Model Context Protocol server that connects Claude (claude.ai or Claude Code) 
 
 ---
 
+### Cross-Deal MCP Analysis Layer
+
+Extends the sensei MCP server with cost-efficient cross-deal analysis — so Claude can answer questions across the full book of business without loading every full deal brief into context.
+
+**The problem:** A full deal brief is ~3–5k tokens. Querying 50 deals naively costs $0.60–$3.00 per question. Tiered tools + pre-computed summaries bring that down to ~$0.05.
+
+**Pre-computed deal summaries:**
+- Add `aiSummary String?` and `aiSummaryAt DateTime?` to `NotebookNode` (opportunities)
+- ~150 tokens per deal — generated automatically on CoM synthesis, regenerated when deal updates
+- Staleness flag: `aiSummaryAt` compared to last `updatedAt` — re-generate if stale
+
+**Tiered MCP tools:**
+| Tool | Tokens per call | Use |
+|---|---|---|
+| `list_deals_summary` | ~200/deal × N deals | Cross-analysis entry point |
+| `get_deal_full` | ~4k | Drill into a specific deal |
+| `search_deals` | ~4k × top-5 | Semantic search, returns most relevant |
+| `query_by_field` | ~200/deal × filtered set | Filter by stage, competitor, ARR, tags |
+
+**Saved analyses (explicit only — not auto-saved):**
+- New `DealAnalysis` model: `{ id, userId, orgId, query, response, dealIds[], model, createdAt, stale Boolean }`
+- `stale` auto-sets when any referenced deal updates after `createdAt`
+- Only saved when user explicitly pins — no automatic accumulation of noise
+- Admin can browse pinned analyses at `/admin/deal-analyses`
+
+**What needs building:**
+1. `aiSummary` + `aiSummaryAt` on `NotebookNode` schema (prisma migrate)
+2. Summary generation hook in `analyze-com` route (post-synthesis, ~1 extra LLM call)
+3. `GET /api/deals/summary` — all opportunities with compact summaries, org-scoped
+4. `DealAnalysis` model + `POST /api/deal-analyses` (save pinned) + `GET /api/deal-analyses`
+5. MCP server tools wired to the above endpoints
+6. Staleness sweep: mark `DealAnalysis.stale = true` when any referenced deal node updates
+
+---
+
 ### B2B Tenant Provisioning
 `POST /api/admin/organizations` + `/admin/tenants` page. Fill org name/slug/admin email → click Provision → creates org, sets billing active, sends invite email. Needed before external rollout.
 
@@ -781,6 +826,43 @@ A Model Context Protocol server that connects Claude (claude.ai or Claude Code) 
 
 ### Switch Okta Issuer to Production
 Change from `goals.oktapreview.com` → `sen-sei.okta.com` via Admin → Identity Provider. No code change needed — takes effect immediately via 60s cache.
+
+---
+
+### Cross-Deal Intelligence Layer (LLM Wiki Pattern)
+senSEi already accumulates knowledge within a deal (meeting → CoM → account synthesis). This feature extends that to *across* deals — building a persistent, compounding wiki that spans the full book of business and gets richer with every deal, meeting, and question asked.
+
+**The gap it closes:**
+Today, each deal's CoM, state analysis, and presales data is isolated in its own node tree. If a manager asks "what are the common technical objections across all our Entra competitive deals?" or "which POC patterns tend to close fastest?", there's no answer — the cross-deal signal is buried in individual opportunity fields. This layer surfaces it.
+
+**What it enables:**
+- *"Show me every deal where SailPoint was the incumbent — what were the migration blockers?"* → synthesized from all opportunities with competitor=SailPoint
+- *"What's our win pattern for deals in the POC stage longer than 60 days?"* → computed from pipeline history
+- *"Which technical objections come up most often in healthcare deals?"* → cross-referenced from meeting transcripts
+- *"What does Waters tell us about how BMC might progress?"* → pattern match across accounts in the same industry + stage
+- Persistent synthesis pages per competitor, per industry, per product line — updated automatically when new deals move through stages
+
+**Architecture:**
+- **Wiki layer**: A new `Wiki` model (or a `wiki/` directory of markdown stored in S3) — one page per competitor, per industry vertical, per product line, per common objection pattern. Structured markdown, LLM-maintained.
+- **Index**: `wiki/index.md` — catalog of all wiki pages with one-line summaries
+- **Synthesis triggers**: When a deal closes (won or lost), when a CoM is generated, or on-demand — the LLM reads the relevant wiki page and updates it with new signal from the deal
+- **Query interface**: New AI Copilot tool — `search_wiki(query)` — reads the index, drills into relevant pages, answers with citations to specific deals
+- **Contradiction detection**: During wiki update, LLM flags if new deal data contradicts existing synthesis (e.g., "Entra usually loses on session termination — but this deal shows a different objection pattern")
+- **Cross-reference maintenance**: When a new competitor page is updated, the LLM also updates any product line or industry pages that reference it
+
+**What needs building:**
+1. `Wiki` Prisma model (or S3-backed markdown store) — `{ id, slug, title, content, updatedAt, sourceDeals: string[] }`
+2. `POST /api/wiki/ingest` — takes an opportunity ID, reads its CoM + presales data, updates relevant wiki pages
+3. `GET /api/wiki/search` — index-first search returning ranked wiki pages
+4. Wiki admin UI (`app/admin/wiki/`) — browse, view, manually trigger rebuilds
+5. Copilot tool: `search_wiki` — surfaces wiki pages in AI Copilot answers
+6. Synthesis trigger: hook into `analyze-com` route to auto-ingest on CoM generation
+7. Cron: weekly full-wiki lint (find contradictions, orphan pages, stale claims)
+
+**Relationship to current architecture:**
+- Adds to existing progressive synthesis cascade (meeting → opportunity → account → **portfolio**)
+- The wiki is the 4th synthesis level — above account, across the entire book of business
+- SE-owned data stays private; wiki is org-wide and manager-visible by default
 
 ---
 
