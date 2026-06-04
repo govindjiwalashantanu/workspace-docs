@@ -1,8 +1,369 @@
 # senSEi — Session Notes
-_Last updated: May 4, 2026 (Notebook ops fix)_
+_Last updated: Jun 3, 2026_
 _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1.md_
 
+---
+
+## Session: Jun 3, 2026 — Google Tasks, AI Buttons, Calendar Matching, Digest
+
+### What was done
+
+**SearchableSelect sweep + Google Tasks integration (commits `6071a75`, `3337875`, `1e298d5`, `3daf1f9`, `05ca99f`, `76eced8`):**
+- `SearchableSelect` component deployed across assignee pickers (meeting modals, AccountDetail user pickers, ActionItemModal, Action Items page filter)
+- Google Tasks enriched: linked-first sort, inactive-user filter, Google logo badges on card tiles
+- `Card` model gains `googleTaskId` / `googleTaskListId` (migration applied to RDS)
+- Google Tasks push from CardModal footer + ActionItemModal footer (consistent Google logo button pattern)
+- Action items + Tasks update without page reload; `push-card` endpoint writes `googleTaskId` back after creation
+- SFDC unimported count shown as badge in sidebar; import banner removed
+
+**SFDC fixes (commit `8ed095d`):**
+- Stage mapping corrected; CardModal due date initialization fixed
+
+**AI button layout rework (commits `d209212`, `61ef57a`, `caf1034`, `75d8159`, `46a7cc4`):**
+- Meeting AI buttons moved into their respective tabs (Summary / Transcript / Attendees)
+- Reverted: restored ✦ AI drawer alongside tab-inline buttons (both coexist)
+- Meeting Intelligence removed from Transcript tab (lives only in Summary)
+- BV Slides and Signals buttons added to Sales tab
+
+**Auto-trigger cascade on manual transcript save (commit `1ac0a45`):**
+- Pasting a transcript and tabbing away fires full analysis automatically (same as programmatic ingest)
+- Guard: only triggers when transcript is new/changed + > 100 chars; `lastAutoAnalyzedTranscriptRef` prevents re-fire on minor edits
+
+**Sync due date to Google Tasks on create + update (commit `4df69a9`)**
+
+**Calendar fixes (commits `d1e79b6`, `3f84f1b`, `7475eac`):**
+- Events vanishing after refresh fixed; ✕ button working; day popover + wider tasks pane
+- Hooks-order violation fixed (`useTriggerTasksSync` moved above conditional early return)
+- Action Items section removed from calendar right pane; tasks pane slimmed
+
+**SFDC refresh button (commit `6a0121e`)**
+
+**Action items scoped to current user (commit `6c63a1d`):**
+- Was leaking action items across all users in the same org; now scoped to `userId`
+
+**Rename opp fix (commit `64fe502`):**
+- Uses typed name; Change Type option removed
+
+**Calendar event matching algorithm — full rewrite (commits `eb6f5f3`, `9f9ead1`, `2a98be5`, `9f21bab`):**
+- 4-signal priority: contact match (97) → domain match (60–95, Levenshtein) → token overlap title (58–80) → token overlap description (48–62)
+- Opportunity scoring capped bonus (max +15) prevents weak opp beating strong account
+- `INTERNAL_TITLE_RE`: titles prefixed "INTERNAL -" or "(internal) -" always return null — no more customer matches on internal prep calls
+- All-internal attendee guard: if every attendee domain is Okta/noise, skip matching
+- `'sensei'` added to `VENDOR_WORDS` — sync meetings no longer match a sensei account
+- 673 stale `suggestedMatch` cache entries cleared
+- `lib/match-helpers.ts` shared lib: `calendar-suggest.ts` and `google-calendar-parser.ts` both import from it (no more drift)
+
+**Digest: "Meetings Today" from calendar cache (commit `129f458`):**
+- Old: read NotebookNode meeting records — most users had nothing → showed "No meetings scheduled" even on full days
+- New: reads `GoogleCalendarEventCache` (already synced daily + on login), America/New_York day boundaries, skips all-day events, includes account match per event
+
+### Test state
+- TypeScript: **clean**
+- 8 pre-existing failures (transcript-validation, unchanged)
+
+### Commits (this session)
+`6071a75` `3337875` `1e298d5` `3daf1f9` `05ca99f` `76eced8` `8ed095d` `d209212` `61ef57a` `caf1034` `75d8159` `46a7cc4` `1ac0a45` `4df69a9` `d1e79b6` `3f84f1b` `7475eac` `6a0121e` `6c63a1d` `64fe502` `eb6f5f3` `9f9ead1` `2a98be5` `9f21bab` `129f458`
+
+### What's Next
+- Push to `main` → ECS deploy
+- Cross-deal intelligence: pipeline pattern extraction, semantic deal similarity, manager synthesis
+- Attachment analyze PDF: `poppler-utils` already in Dockerfile — unblocked, test in prod
+- Zoom MCP OAuth
+- SFDC bidirectional sync
+- Confidence scoring on CoM fields
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts`
+- Migrate hardcoded systemPrompt in `agent/followup/route.ts` → `PROMPT_DEFAULTS`
+
+---
+
+## Session: Jun 3, 2026 — AI Intelligence Pipeline (Signals, DAG, RAG, Optimizations)
+
+### What was done
+
+**Phase 1 — Meeting signal extraction + auto-trigger:**
+- `analyze-worker` now extracts structured `meetingSignals` NodeProperty per meeting: stakeholders/sentiment, objections, buying signals, tech requirements, competitive mentions, customer pain verbatim, open questions
+- Action items auto-close when resolved in transcript — `resolvedEvidence` verbatim quote written to `MeetingActionItem.resolvedEvidence`
+- `MeetingActionItem` gained `status` / `resolvedAt` / `resolvedEvidence` — migrated to RDS
+- Transcripts auto-trigger full meeting analysis on ingest + MCP `create_meeting` / `update_meeting`
+
+**Phase 2 — Analysis DAG:**
+- `context-builder.ts` aggregates `meetingSignals` into `## Meeting Intelligence Signals` section
+- CoM, Three Whys, State, Elevator Pitch, BV all receive structured signals + type-specific instructions to prioritize verbatim quotes as evidence fields
+
+**Phase 3 — pgvector RAG:**
+- pgvector 0.8.0 enabled on RDS; `TranscriptChunk` table + HNSW index deployed
+- `lib/embeddings.ts` + `lib/rag.ts` built — `text-embedding-3-small` via LiteLLM, 2000-char chunks, cosine similarity top-8 retrieval
+- RAG injected into `context-builder` for deals with 4+ meetings
+- 2,684 chunks seeded across all 124 existing meetings
+
+**LLM cascade optimizations (70-80% call reduction):**
+- Stakeholder map removed from auto-cascade
+- 5-min DB lock deduplicates parallel cascades (bulk 5-meeting ingest: 45 calls → 9)
+- Staleness gate skips cascade if `lastRun_com` newer than triggering meeting
+- State lazy-refresh skips if no new `technicalRequirements` in signals since last run
+- Signals-first incremental CoM + Three Whys: ~8k tokens vs ~290k on active deals
+
+**UI:**
+- Meeting Intelligence dashboard in Summary sub-tab — stakeholder cards (role/sentiment), buying signals, objections, tech requirements, competitive chips, open questions, customer pain verbatim
+- Meeting analysis Summary sub-tab redesigned to card-based layout
+- AI panel buttons changed to blue-tinted glass style
+
+**Backfill:**
+- 2,684 transcript chunks seeded (all 124 meetings) for RAG
+- 27 other-user meetings backfilled with signals (62 total now have signals)
+
+**Quality validation on WEX (6-meeting deal):**
+- Evidence fields now anchored to verbatim quotes vs prior paraphrase
+- `requiredCapabilities` grew 4 → 7 items
+- Presales surfaced 3 distinct risks with named stakeholders
+
+### Commits
+- `4c33339` feat: AI intelligence pipeline — meeting signals, Analysis DAG, pgvector RAG
+- `bb22c78` perf: LLM cascade optimization — dedup, staleness gate, lazy refresh, incremental updates
+
+### Test state
+- TypeScript: **clean**
+- 8 pre-existing failures (transcript-validation, unchanged)
+
+### What's Next
+- Your own WEX + other meetings: re-analyze manually to see Meeting Intelligence dashboard
+- Cross-deal intelligence: pipeline pattern extraction, semantic deal similarity, manager synthesis
+- Attachment analyze PDF: `poppler-utils` already in Dockerfile runner — unblocked, test in prod
+- Google Workspace MCP OAuth (same pattern as Slack)
+- Zoom MCP OAuth
+- SFDC bidirectional sync
+- Confidence scoring on CoM fields
+
+---
+
+## Session: Jun 2–3, 2026 — LiteLLM on ECS, Slack MCP OAuth, SFDC import fixes
+
+### What was done
+
+**ECS → LiteLLM unblocked:**
+- ECS NAT gateway IP `52.206.25.250` whitelisted at `llm.atko.ai` by Dennis (via Rick)
+- All AI analysis buttons now call server-side routes directly (removed `isDev` gate in `OpportunityAIPanel` and `MeetingAIPanel`)
+- New LiteLLM key `sk-CMOEpIQF...` with all-model access; model updated to `claude-opus-4-7` (supports temperature on Bedrock)
+- Fixed stale model name fallbacks (`claude-4-6-sonnet` → `claude-sonnet-4-6`) across all routes
+- Removed Learning Center (LearnPage, learn-modules, Sidebar nav, public/learn assets)
+- LiteLLM key + model updated in ECS task definition (revision 13), deployed via GitHub Actions
+- CLAUDE.md MCP Compute Rule updated — ECS CAN reach LiteLLM as of Jun 2026
+
+**Meeting analysis button fixes:**
+- `followups` route: persona defaults to `se`
+- `analyze` route: fetches transcript from DB when not sent in body
+- `MeetingAIPanel`: removed Ask Okta Advisor button (needs user input, wrong paradigm)
+- `AccountDetail`: removed `isDev` gate from Research button
+
+**Error log cleanup:**
+- 770 prod errors resolved (E2E noise, stale LLM errors from old key, browser noise)
+- 2 real bugs fixed in `InsightsPage.tsx` (`rank is not defined`, `y.map is not a function`)
+- `globalmap` added to `PageName` type
+
+**Slack MCP OAuth integration:**
+- `lib/mcp-oauth-provider.ts` — DB-backed `OAuthClientProvider` (encrypted tokens in `UserIntegration`)
+- `lib/slack-mcp-client.ts` — MCP client for `slack-mcp.llm.atko.ai/mcp`, manual PKCE flow
+- `/api/slack/{connect,callback,status,disconnect}` routes
+- Settings → Integrations: Connect Slack button
+- `SlackContextPanel` rebuilt: search bar, ✦ Fetch from Slack, review/checkbox UI, Save selected, ✦ Analyze button
+- `/api/notebook/[id]/slack-fetch` — calls Slack MCP to search by query
+- Slack tools wired into chat (`slack_search_messages`, `slack_get_channel_messages`, `slack_send_message`)
+- System prompt updated: tells model Slack is live when connected
+- OAuth debug journey: `widgico` workspace limitation → `slack-mcp.llm.atko.ai` is the right subdomain URL
+- Valerie Goldman connected Slack successfully, fetch working
+
+**SFDC import fixes:**
+- Root cause: `demo_used` typed as `z.string()` but API returns boolean → silent 400 on every import
+- Fixed: `z.unknown()` for `demo_used` and `user_role` in Zod schema
+- `SfdcSyncPage`: null guards on `opps.map()`, error surfacing on `handleImportOne`
+- `SfdcSyncPage`: frozen "Already imported" section at bottom for previously imported opps
+- `SfdcSyncPage`: handles `opps.length === 0` + `importedOpps.length > 0` state correctly
+- Valerie Goldman's Peloton opp imported successfully (first real user test)
+
+### Test state
+- TypeScript: **clean**
+- 8 pre-existing failures (all transcript-validation, pre-existing from May 17)
+
+### What's Next
+- Session context files update + commit
+- Slack OAuth: `widgico` workspace limitation — Dennis needs to distribute the Slack app to Okta workspace for other SEs; workaround is per-SE OAuth to their own Slack workspace
+- Auto-analyze on transcript ingest (highest-impact from LiteLLM unblock)
+- Google Workspace MCP OAuth (same pattern as Slack — use `google-workspace-mcp.llm.atko.ai`)
+- Zoom MCP OAuth
+- SFDC bidirectional sync (push presales fields back to SFDC)
+- Deal staleness alerts / automated pipeline monitoring
+
+---
+
+## Session: May 20, 2026 — Login cleanup + MCP onboarding UX
+
+### What was done
+
+- **Carolyn Fishman password reset** — RDS tunnel + Prisma, bcrypt 12 rounds, updated `passwordHash` directly. AWS SSO was expired, re-authenticated first.
+- **Test files restored** — `__tests__/` directory (295 files) was deleted from filesystem but never committed. Restored via `git checkout -- __tests__/`. Suite: 3049 passing, 7 pre-existing failures.
+- **Login page — Okta only** — Removed email/password form, Google button, register link, forgot-password, and divider. Single "Continue with Okta" button. Visual polish: gradient bg, blur orbs, glassmorphism card.
+- **MCP setup card** — Replaced plain Server URL card with tabbed card (Claude Code / Claude.ai). Defaults to Claude Code. Shows ready-to-paste `~/.claude/settings.json` block. Key auto-fills into config after generation. "Copy config" button included.
+
+### Commits
+- `dbfd415` feat: simplify login to Okta-only
+- `f86b3a4` feat: MCP setup card with Claude Code config snippet + login page polish
+- `fe24449` feat: login page visual polish — gradient bg, orbs, glass card
+
+### Test state
+- Unit/API: 3049 passing · 7 failing (same 7 pre-existing)
+- TypeScript: clean
+
+### What's Next
+- Migrate `app/api/agent/followup/route.ts` hardcoded systemPrompt to `PROMPT_DEFAULTS`
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts`
+
+---
+
+## Session: May 17, 2026 — Agent Automation Pipeline + SE Onboarding Script
+
+### What was done
+
+**Goal:** Ship event-driven agent automation (all 4 phases) and a one-command SE onboarding script.
+
+**Preferences loading fix:**
+- `GET /api/agent/preferences` had no error handling — DB throw returned HTML 500, `r.json()` choked, silent catch in component left UI stuck at "Loading preferences..."
+- Fix: wrapped Prisma query in try/catch in route (returns defaults on DB error); component `.catch` now calls `setPrefs(defaultPrefs)` instead of swallowing
+
+**SE onboarding script (`scripts/se-setup.sh`):**
+- New bash script: validates `snsei_` token, checks `claude` is installed, copies `.claude/skills/*.md` from repo to `~/.claude/skills/`, uses embedded Python3 to safely merge MCP config into `~/.claude/settings.json`, pings MCP server to verify token
+- Served at `GET /api/setup/script` (new `app/api/setup/script/route.ts`)
+- One-command install: `curl -s https://sensei.oktademo.app/api/setup/script | bash -s -- snsei_KEY`
+
+**Setup page updated (`app/setup/page.tsx`):**
+- Added Phase 4 "Install Agent Skills" section with the curl command + re-run instructions
+- Phases 4→5 renumbered for "Run Your First Analysis"
+
+**Skills committed to repo (`.claude/skills/`):**
+- `analyze-queue.md` — `/analyze-queue` skill: drains full pending analysis queue with prefs-aware filtering
+- `run-analysis.md` — `/run-analysis <nodeId> <type>` for single on-demand analysis
+
+**URL fix:** All references to `okta.se-n-sei.com` corrected to `sensei.oktademo.app`
+
+### Commits
+- `da90fbb` — agent automation (Phases 1-4): dirty flags, preferences, activity log, 5 API routes, AIJobBell, SettingsPage
+- `1e3157f` — SE onboarding: setup script, route, setup page Phase 4, skills committed to repo
+- `d35dc50` — fix: prod URL `okta.se-n-sei.com` → `sensei.oktademo.app` in setup page + script
+
+### Test state
+- TypeScript: **clean**
+- Unit/API: 3116 passing · 7 failing (same 7 pre-existing transcript-validation failures)
+
+### What's Next
+- Optionally migrate `app/api/agent/followup/route.ts` hardcoded systemPrompt to `PROMPT_DEFAULTS`
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts`
+- Consider auto-refresh of skills on session start (poll `/api/setup/script` for hash changes)
+
+---
+
+## Session: May 17, 2026 — MCP Settings Page Restructure
+
+### What was done
+
+**Goal:** Make the MCP settings page a "wow moment" for SEs discovering what's possible with agent workflows.
+
+**Layout restructure (`components/SettingsPage.tsx` McpSection):**
+- Two-column flex layout: left column (440px fixed) holds key management + available tools; right column (flex: 1) owns the full What's Possible catalog
+- Available tools panel moved into left column with dynamic tool count badge (`MCP_TOOL_GROUPS.reduce`)
+- Right column split into two 2-column grids separated by section headers
+
+**Single MCP workflows (6 cards x 4 examples each):**
+Slack, Gmail, Google Drive, Google Calendar, Zoom, Lucid. Each card has 4 concrete SE-relevant example prompts.
+
+**Power workflows -- multiple MCPs (6 combo cards):**
+- Full Meeting Lifecycle (Zoom + Gmail + Calendar + sensei)
+- Complete Deal Intelligence (Slack + Gmail + Drive + sensei)
+- POC Launch Kit (Zoom + Drive + Calendar + sensei)
+- Stakeholder Intelligence (Slack + Gmail + Lucid + sensei)
+- Weekly Pipeline Sweep (Slack + Drive + sensei)
+- Executive QBR Prep (Zoom + Gmail + Drive + Lucid + sensei)
+
+Each multi-MCP card shows pill badges for its MCPs + 3 examples with accent-colored left border.
+
+**Commit:** `4b9f8e9` pushed to `govindjiwalashantanu/sensei-webapp` main
+
+### Test state
+- TypeScript: **clean**
+
+### What's Next
+- Optionally migrate `app/api/agent/followup/route.ts` hardcoded systemPrompt to `PROMPT_DEFAULTS`
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts`
+
+---
+
+## Session: May 7, 2026 — MCP → API Route Architecture Refactor (complete)
+
+**What was built (session 1):**
+- Third auth path in `requireAuth()`: accepts `x-service-token` (matched to `AGENT_CRON_SECRET`) + `x-service-user-id`/`x-service-org-id` headers
+- `lib/service-fetch.ts` — thin wrapper injecting service auth headers, uses `NEXTAUTH_URL` as base
+- `app/api/notebook/[id]/children/route.ts` — `GET` with `?type=...` and optional `?expand=true`
+- `app/api/notebook/[id]/analysis-result/route.ts` — `POST` writes analysis props for all 5 analysis types
+- `lib/mcp-tools.ts` — 9 of 13 tool cases migrated to `serviceFetch` in session 1
+- Fixed 9 pre-existing virtual-desk test failures (GET no-arg, missing mocks)
+
+**What was built (session 2 — pipeline/POC migration):**
+- `list_pipeline` + `get_pipeline_summary`: replaced `prisma.card.findMany` (org-wide, no board access check) with `serviceFetch('/api/boards', ...)` → flatten cards → optional col filter. Security gain: board-level `userId OR shares` enforced.
+- `create_card`: replaced `prisma.board.findFirst` + `prisma.card.create` with `serviceFetch('/api/boards', ...)` + `serviceFetch('/api/boards/${boardId}/cards', ...)`. Added `STAGE_TO_COL` mapping — `discovery/negotiation→todo`, `poc/demo/proposal→inprogress`, `closed_won/closed_lost→done` (fixes pre-existing bug: board col enum validation would have rejected raw stage names).
+- `get_poc_context`: replaced 50-line Prisma aggregation (orgId-only scope) with single `serviceFetch('/api/notebook/${accountId}/poc-context', ...)`. Security gain: `verifyNotebookAccess` now enforced (was bypassed).
+- `list_open_pocs`: kept Prisma but added `userId` to `where` clause — was orgId-only scope, could return opps not owned or shared with requesting user.
+- `app/api/notebook/[id]/poc-context/route.ts` — new route applying `verifyNotebookAccess` before aggregating account + contacts + opportunities + recent meetings + inbox items.
+- `__tests__/api/mcp-pipeline-tools.test.ts` — 11 new tests (list_pipeline, get_pipeline_summary, create_card, get_poc_context)
+
+**Test state:** 3074 passing · 0 failing · TypeScript clean
+
+**What was built (session 3 — MCP finalization + chat upgrade):**
+- `app/api/mcp/route.ts`: added `checkAgentRateLimit` (200 req/hr per user, same limit as `/api/chat`)
+- `app/api/chat/route.ts`: full rewrite — removed keyword pre-search (notebookNode/board/attachment Prisma queries + `fetchWithTimeout`), replaced with agentic tool-call loop using `TOOL_DEFINITIONS` + `callTool`. Up to 8 LiteLLM iterations. `maxDuration` 60→120. System prompt updated to instruct tool use over asking.
+- `__tests__/api/chat.test.ts`: complete rewrite — global fetch stub, callTool mock, tool-calling describe block (3 tests), kept auth + DB persistence tests. 10 tests total passing.
+- Schema push: confirmed already in sync (McpApiKey + InboxItem + UserActivity already on RDS).
+- Committed `36de5e9` and pushed to origin/main.
+
+**Test state:** 3084 passing · 0 failing (2 PipelinePage failures are pre-existing, unrelated) · TypeScript clean
+
+## Session: May 7, 2026 — Chat agent quality improvements (SSE + search_workspace + node context)
+
+**What was built:**
+- **`search_workspace` tool** (`lib/mcp-tools.ts`) — parallel Prisma search across accounts + opportunities + meetings in a single call. Returns `{ results, hint }` when empty to help Claude self-correct (try shorter keyword). `search_accounts`, `list_opportunities`, `list_meetings` also return hints on empty results.
+- **Rich node context injection** (`app/api/chat/route.ts`) — when `nodeId` is provided, resolves node type/title and walks up parent→grandparent hierarchy before building system prompt. Tells Claude exactly which tool to call first (e.g. "Call get_opportunity first to answer questions about this deal").
+- **SSE streaming** (`app/api/chat/route.ts`) — route rewritten from `Response.json()` to `new Response(ReadableStream, SSE_HEADERS)`. Emits `thinking`/`chunk`/`done`/`error` events. `isFinalAttempt` uses `tool_choice: 'none'` on iteration 8.
+- **Chat UI SSE reader + thinking indicator** (`components/AICopilotPanel.tsx`) — `sendMessage` rewritten to read SSE stream via `res.body.getReader()`. In-place message updates via `assistantId` placeholder. `TypingIndicator` upgraded to show pulsing italic thinking text (tool label). `MessageBubble` shows dots spinner while content is empty.
+- **Tests** — `__tests__/api/chat.test.ts`: complete rewrite, 14 tests (added SSE format tests + `tool_choice: none` saturation test). AICopilotPanel test updated with `sseResponse()` helper. Full suite: 3100 passing · 0 failing · TypeScript clean.
+
+**Test state:** 3100 passing · 0 failing (1 pre-existing act warning in AICopilotPanel) · TypeScript clean
+
 ## ⟶ What's Next
+- [ ] **Sonali + Andre POC** — walk them live through analyzed transcripts; accounts pre-loaded in prod
+- [ ] **Test read-only sharing end-to-end on prod** — verify shared users see action items but cannot edit
+- [ ] **MindMap page rewrite** — live notebook graph with completeness rings + drill-down
+- [ ] **Leadership Insights: salesRole drill-down** — insights leaderboard can now filter/group by salesRole (SE vs AE) as follow-on
+
+## Session: May 7, 2026 — CoM bulk extraction + context panels + deploy
+
+**What was built:**
+- **CoM bulk MCP extraction** — ran `get_analysis_context` + Claude synthesis + `write_analysis_result` for all opps with transcripts: Sinclair, Acadian (correct sibling opp `cmnyqk1ld000mgkx5z6qfitds`), Webster Discovery. All 33 keys written (completeness: 1.0) per opp. Bain + orphaned Acadian skipped (no transcripts).
+- **CoM 11-field expansion** — `COM_WRITE_KEYS` now includes all VBC Mantra fields: `valueDriver`, `beforeScenarios`, `negativeConsequences`, `afterScenarios` added. `com-constants.ts` is single source of truth (QUAL-1). `mcp-tools.ts` outputSchema includes all 11 fields with evidence descriptors.
+- **Context panels** — `DriveContextPanel`, `EmailContextPanel`, `SlackContextPanel` components; `lib/context-builder.ts` utility; wired into OpportunityDetail context tab.
+- **Notebook two-phase load** — `?shallow=true` on GET /api/notebook returns accounts/opps only; `NODE_INCLUDE` strips heavy props (`LIST_PROPS_WHERE`); queries.ts fetches shallow first, defers full fetch on expand. New E2E spec.
+- **Inbox overhaul** — InboxPage rebuilt with approve/dismiss, Drive+Email+Slack context display; `/api/inbox/[id]/approve` route added.
+- **TypeScript fixes** — 3 errors fixed: `LIST_PROPS_WHERE as const` readonly AND array, `result.summary` missing property, `readonly cacheKey` cast.
+
+**Test state:** 3100 passing · 0 failing · TypeScript clean
+**Commit:** `d55d450` pushed to origin/main → deployed to `https://okta.se-n-sei.com`
+
+## Session: May 8, 2026 — Board sync + staleness signal + node retyping
+
+**What was built:**
+- **Board card sync pass** — systematically moved completed action items to `done` across all active opps. Evidence-based: ECS prod state for sensei-pilot cards (Apr 11), meeting chain for MassMutual pre-Apr-15 cards, Closed Won cleanup for BMC (17) + A+E (7). Dedup pass: 53 duplicate cards (same title+opp, kept oldest) moved to done.
+- **MassMutual + Webster presales analysis confirmed** — both have `whyAnything`/`whyOkta`/`whyNow` + `presalesNotes` populated (816–987 chars each). Not a gap.
+- **Staleness signal** (`components/OpportunityAIPanel.tsx`) — `lastMeetingDate` derived from `node.children` meetings; `ActionBtn` computes `isStale = lastRunIso < lastMeetingDate`; shows amber `⚠ Last run: May 6` with tooltip "New meeting since last run — results may be outdated". CSS `.aip-stale { color: #d97706; font-weight: 500 }`.
+- **Node retyping** — `app/api/notebook/[id]/route.ts`: added `type` field to `UpdateNodeSchema` (z.enum of all 6 node types). `lib/queries.ts`: `useRetypeNode()` mutation (optimistic update). `components/NotebookPage.tsx`: `openRetypeForm()` opens select modal, "Change Type" menu item added between Rename and Delete.
+
+**Test state:** TypeScript clean · exit 0
+
 - [x] **Database ER Diagram** — Admin → Database, live schema from information_schema, Mermaid erDiagram, table filter ✓
 - [x] **Schema review + 15-issue fix** — isAdmin dropped, cascades, NodeCustomProp unique, indexes, Conversation dedup fix, SysLog TTL cron ✓
 - [x] **Apply schema changes to RDS** — all 6 changes confirmed: isAdmin dropped, NodeCustomProp unique, Board+NotebookNode CASCADE, Contact+Feature indexes ✓
@@ -31,7 +392,176 @@ _Archived: sessions before March 30 addendum 5 → SESSION_NOTES_ARCHIVE_2026-Q1
 - [ ] Sean Newell TDI meeting — bring `/prod-readiness` PDF (local, print before meeting)
 - [ ] File provisional patent — route IDF to Okta IP counsel via Sean/Joel
 - [ ] Gong API credentials — Sean to arrange with Okta Gong workspace admin
-_Updated: May 4, 2026_
+_Updated: May 5, 2026_
+
+---
+
+## Session: May 6, 2026 — Intelligence Pipeline (PAUSED for POC May 7)
+
+### What was done
+
+**`app/api/inbox/[id]/approve/route.ts` — full source-type branching:**
+- `calendar` / `zoom` → `meeting` node directly under opp/account
+- `slack` / `email` / `manual` → `note` node directly under opp/account
+- `google-drive` → `note` under "Documents" free-folder (existing behavior preserved)
+- `lucid` → `note` under "Diagrams" free-folder (new); parses documentId from lucid.app URL as fallback
+- Consolidated `ensureDocsFolder` into generic `ensureFolder(title, position)` helper
+
+**`lib/mcp-tools.ts` — `add_to_inbox` accepts optional `metadata` param:**
+- Stored as JSON string on `InboxItem.metadata`; passed through to approve route for driveId/lucidDocumentId extraction
+
+### Paused — pick up after POC (May 7)
+
+**Full intelligence pipeline — approved design, not yet built:**
+
+**1. `lib/context-builder.ts` — `buildFullContext(nodeId)`**
+Returns structured context from ALL note types under an opp/account:
+```ts
+{ meetings, slack, drive_docs, diagrams, emails, attachments }
+```
+Each entry includes title, url, and extracted intelligence body.
+
+**2. Update ALL analysis routes to use buildFullContext**
+Every route today only uses meeting transcripts. Routes to update:
+- `analyze-com`, `analyze-state`, `analyze-presales`, `analyze-three-whys`, `analyze-bv`
+- `agent/next-action`, `agent/tech-qual`, `agent/stakeholder-map`, `agent/followup`
+- `get_analysis_context` in `lib/mcp-tools.ts`
+
+**3. Async intelligence extraction on approve (GDrive + Lucid)**
+After creating the note node, fire `after()` job:
+- GDrive: fetch doc content via Google MCP → LLM → structured intelligence (summary, themes, risks, action items, contacts) → write to note `body` NodeProperty
+- Lucid: fetch diagram via Lucid MCP → same LLM extraction
+
+**4. Attachment intelligence (async on upload)**
+In `app/api/notebook/[id]/attachments/route.ts` POST:
+- `extractedText` is already available after upload
+- Fire `after()` job → LLM → structured intelligence → create a `note` node under parent opp/account with intelligence as body
+
+**5. New MCP tools**
+- `refresh_slack_intelligence(accountId, channelIds[])` — fetches Slack messages, appends date-sectioned content to per-channel note nodes (`source: 'slack-channel'`). Format: `## YYYY-MM-DD\n@user: message\n...`
+- `refresh_email_intelligence(accountId)` — fetches Gmail threads via Google MCP, creates InboxItems with LLM-suggested actions (e.g. "Schedule follow-up", "Share proposal")
+
+**6. UI tab updates (OpportunityDetail.tsx)**
+- **Documents tab** (`activeTab === 'documents'`): show `NodeAttachment` records + child notes with `source: 'google-drive'`
+- **Diagrams tab** (`activeTab === 'diagrams'`): read from child note nodes with `source: 'lucid'` instead of `node.properties.lucid_diagrams` JSON array (needs migration)
+
+**Open question before building Slack:** Where are monitored channelIds stored per account? Options: NodeProperty on account node (`slackChannels`) or global org setting. Ask Shantanu.
+
+### Test state
+- TypeScript: **clean**
+- No test changes this session
+
+---
+
+## Session: May 6, 2026 — MCP compute-via-Claude tools
+
+### What was done
+
+**`get_analysis_context` + `write_analysis_result` MCP tools:**
+- `lib/mcp-tools.ts` — added 2 new tool definitions + implementations for the "MCP compute-via-Claude" pattern that completely bypasses LiteLLM in prod
+- `get_analysis_context`: loads node with full context (parent, children meeting transcripts), calls `getPromptTemplate(orgId, key)` to respect org prompt overrides, assembles `systemPrompt` + `userMessage` (with `buildDealContext`) + `outputSchema` + `instructions` — returns everything Claude.ai needs to run analysis natively
+  - Supports: `com`, `three_whys`, `state` (opportunity node — aggregates all meeting transcripts), `meeting` (single meeting node transcript)
+- `write_analysis_result`: validates node exists, accepts `result: object`, upserts all analysis keys to `NodeProperty`, fires AIJob notification (`createJob` + `completeJob`), returns `{ ok, keysWritten, timestamp }`
+  - CoM: 7 COM_KEYS + `_evidence` suffixes + `updatedAt_com` + clears `manualEdits_com`
+  - three_whys: whyAnything/whyOkta/whyNow + `lastRun_threeWhys` + clears `manualEdits_threeWhys`
+  - state: 8 STATE_KEYS + clears `manualEdits_state`
+  - meeting: summary/problems/nextSteps + keyQuotes + actionItems (JSON arrays)
+- `__tests__/api/mcp-analysis-tools.test.ts` — 15 tests, all passing
+
+**Why this matters:** LiteLLM is IP-restricted to Okta network — prod (AWS ECS) cannot reach it. These two tools let Claude.ai (connected via MCP) act as the compute layer: fetch context from sensei → run analysis → write results back. Zero LiteLLM dependency.
+
+### Test state
+- Unit/API: **3043 passing · 0 failing**
+- TypeScript: **clean**
+- Pre-existing failures in virtual-desk tests (9 tests, `GET()` called without Request arg) — NOT caused by this session; present before these changes
+
+### What's Next
+See top of file.
+
+---
+
+## Session: May 6, 2026 — MCP Server + Inbox
+
+### What was done
+
+**sensei MCP Server (`/api/mcp`):**
+- `prisma/schema.prisma` — added `McpApiKey` model (id, userId, orgId, name, keyHash unique, keyPrefix, lastUsedAt) and `InboxItem` model (id, userId, orgId, source, title, body, url, accountId, status)
+- `lib/mcp-auth.ts` — `generateApiKey()` (raw + SHA-256 hash + prefix), `validateMcpApiKey()`, `extractMcpAuth()` from Bearer token
+- `lib/mcp-tools.ts` — 18 MCP tool definitions + implementations: `search_accounts`, `get_account`, `create_account`, `list_opportunities`, `get_opportunity`, `create_opportunity`, `list_meetings`, `get_meeting`, `create_meeting`, `list_contacts`, `list_pipeline`, `create_card`, `add_to_inbox`, `list_inbox`, `assign_inbox_item`, `get_poc_context`, `get_pipeline_summary`, `list_open_pocs`
+- `app/api/mcp/route.ts` — HTTP/SSE MCP server (JSON-RPC 2.0, manual implementation, no SDK dependency); handles: initialize, tools/list, tools/call, notifications, ping; supports batch requests
+- `app/api/mcp/keys/route.ts` — GET (list keys) + POST (generate key, returns raw once)
+- `app/api/mcp/keys/[id]/route.ts` — DELETE (revoke, scoped to userId+orgId)
+- `app/api/inbox/route.ts` — GET inbox items by status
+- `app/api/inbox/[id]/route.ts` — PATCH (assign/dismiss) + DELETE
+- `app/settings/mcp/page.tsx` — API key management UI: generate keys, copy raw key once, revoke, server URL, tool reference
+- `__tests__/api/mcp.test.ts` — 10 tests covering all methods + auth + edge cases
+- `__tests__/api/mcp-keys.test.ts` — 7 tests covering GET/POST/DELETE + auth
+
+**Architecture decision:** MCP server implemented as plain JSON-RPC without `@modelcontextprotocol/sdk` — Okta Artifactory shim blocks npm installs for unregistered packages. Manual implementation is ~200 lines and covers the full protocol.
+
+**Why this matters:** ECS prod cannot reach LiteLLM proxy (IP-restricted). MCP server lets SEs connect Claude.ai to sensei — Claude does the AI, sensei provides the data layer. No LiteLLM dependency for the agent workflow.
+
+### Test state
+- Unit/API: **3027 passing · 0 failing (247 files)**
+- TypeScript: **clean**
+
+### What's Next
+See top of file.
+
+---
+
+## Session: May 5, 2026 — Sales Roles on Team Tab + E2E Tests
+
+### What was done
+
+**Sales role field on Team Tab (`salesRole String?` on `User`):**
+- `prisma/schema.prisma` — `salesRole String?` added to `User` model; `npx prisma db push` confirmed in sync
+- `lib/auth.ts` — `inferSalesRole(title)` helper auto-populates role from Okta profile title on first sign-in (SE/AE/SE Manager/Area Sales Director/Director, Presales/AVP, Sales); only fires when `salesRole` is null (preserves manual overrides)
+- `app/api/organizations/current/members/[userId]/route.ts` — `PATCH` handler added; Zod validates role enum; any org member can update (no admin gate)
+- `app/api/organizations/current/members/route.ts` — `salesRole` added to user select in members list
+- `app/api/notebook/[id]/share/route.ts` — `salesRole` added to both share user and owner selects
+- `lib/queries.ts` — `OrgMember` type extended with `salesRole`; `useUpdateSalesRole()` mutation added; `ShareUser` type extended
+- `components/AccountDetail.tsx` — owner row shows static `salesRoleBadge`; shared member rows show inline `<select>` for account owners or static badge for viewers; role options: SE, AE, SE Manager, Area Sales Director, Director Presales, AVP Sales
+- `app/globals-redesign.css` — role badge styles (`.sales-role-badge` + 6 color variants) + `.sales-role-select`
+
+**Bug fix — Turbopack stale Prisma bundle:**
+- Root cause: `GET /api/notebook/:id/share` was returning 500 with empty body after `salesRole` was added to schema. Turbopack had cached the pre-`salesRole` Prisma client in `.next/dev/server/chunks/`. `PrismaClientValidationError: Unknown field 'salesRole'` at runtime.
+- Fix: deleted `.next/` directory; restarted dev server with `./node_modules/.bin/next dev`.
+
+**Playwright E2E — `__tests__/e2e/team-tab.spec.ts` (8 tests, all passing):**
+- 4 API tests: GET owner+shares (200), GET non-existent (404), POST invalid email (400), POST unknown org email (404)
+- 3 UI tests: owner row visible + no "Only you have access" error, add-user dropdown present, read-only node has no shares
+- Key fix for UI tests: pre-set `activeNodeId` in Zustand localStorage via `page.evaluate()` + `waitForFunction` to wait for "Loading notebook..." to clear on large datasets
+
+**E2E auth:** switched `TEST_USER_EMAIL` to `shantanu.govindjiwala@okta.com` / `sensei123` (was stale e2e runner account)
+
+### Test state
+- Unit/API tests: **3010 passing · 0 failing (245 files)**
+- E2E (team-tab spec): **8/8 passing**
+- TypeScript: **clean**
+
+### What's Next
+- Leadership Insights `salesRole` drill-down — leaderboard can filter/group by SE vs AE
+- Apply UserActivity schema to RDS (`npx prisma db push` via tunnel)
+- Sonali + Andre POC walkthrough (May 7)
+
+---
+
+## Session: May 5, 2026 — Leadership Insights Dashboard
+
+### What was done
+
+**Admin Insights Dashboard (`/admin/insights`):**
+- `__tests__/api/admin-insights.test.ts` + `__tests__/api/admin-insights-drill.test.ts` — tests for 401, 403, 200 all sections, period labels, leaderboard, ARR parsing
+- `app/api/admin/insights/route.ts` — `GET /api/admin/insights?period=quarter|fy`; superadmin-gated; 8 sections: Adoption, Meeting Intelligence, Pipeline, Action Items, AI Usage, Competitive, Pain Themes, Leaderboard (top 10 SEs by activeMs)
+- `app/admin/insights/page.tsx` — period toggle (quarter/fy), auto-refresh every 60s, Export PDF button, CSS-only charts
+- `app/admin/layout.tsx` — Insights nav entry added (second position)
+- `app/globals-redesign.css` — ~250 lines of insights-specific styles
+- All queries filter `user: { isActive: true }` — blocks E2E test account data from inflating metrics
+
+### Test state
+- Unit/API tests: **2989 passing · 0 failing**
+- TypeScript: **clean**
 
 ---
 
@@ -1667,6 +2197,42 @@ Started session with 5 known failures and stale `.next` cache (ChunkLoadError). 
 
 ---
 
+## Session: May 5, 2026 — POC Prep + UI Polish
+
+### What was done
+
+**Read-only action items enforcement:**
+- `ActionItemModal` now accepts `isReadOnly` prop — all inputs readOnly, priority disabled, checklist edits blocked, footer shows only "close" button
+- `ActionItemsList` guards all click handlers with `!isReadOnly` — no modal opening for shared-access users
+- Server was already blocking writes; client now matches
+
+**Notebook sidebar cleanup:**
+- Removed "+" add-child buttons from all tree nodes (caused confusion for users)
+- Added icon legend strip at bottom of sidebar (Account / Opportunity / Meeting / Note)
+- POC Snapshot note nodes now hidden from sidebar tree — they belong in the POC tab only
+
+**User Activity tracking (admin):**
+- `UserActivity` Prisma model — one record per user per day, tracks `activeMs` via heartbeat
+- `POST /api/activity/heartbeat` — upserts daily row with 30s increment
+- Admin user list now shows today / 7-day / lifetime active time columns
+- Audit log extended with additional filters
+
+**Test fixes:**
+- `notebook-share` + `notebook-health-share` tests updated: GET now returns `{ owner, shares }` (not plain array)
+
+**Commit:** `4443fcb`
+
+### Test state
+- Unit/API tests: **2982 passing · 0 failing (242 files)**
+- TypeScript: **clean**
+
+### What's Next
+- Apply UserActivity schema to RDS (`npx prisma db push` via tunnel)
+- Test read-only sharing end-to-end on prod
+- Sonali + Andre POC walkthrough (May 7)
+
+---
+
 ## Session: May 4, 2026 — Code Review Cleanup (27 findings)
 
 ### What was done
@@ -1706,3 +2272,312 @@ Fixed all 27 code review findings across 5 batches:
 ### What's Next
 - Virtual Desk page — Inbox triage + Outbox SFDC review
 - MindMap page rewrite — live notebook graph with completeness rings + drill-down
+
+---
+
+## Session: May 5, 2026 — Leadership Insights Dashboard
+
+### What was done
+
+**Admin Insights Dashboard (`/admin/insights`):**
+- `__tests__/api/admin-insights.test.ts` — 7 tests: 401, 403, 200 all sections, FY period label, 500 error logging, leaderboard ranking, ARR string parsing
+- `app/api/admin/insights/route.ts` — `GET /api/admin/insights?period=quarter|fy`; superadmin-gated; 8 metric sections:
+  - **Adoption:** active today / 7d / period, 14-day DAU sparkline
+  - **Meeting Intelligence:** analyzed vs total, analysis rate %
+  - **Pipeline:** total ARR, opps count, CoM rate, POC rate, health distribution
+  - **Action Items:** total cards, by-column breakdown, overdue count, completion rate
+  - **AI Usage:** total runs by type, estimated minutes saved (15 min/run)
+  - **Competitive:** top competitors by frequency
+  - **Pain Themes:** top customer pain themes from meeting `problems` property
+  - **Leaderboard:** top 10 SEs ranked by `activeMs` in period
+- `app/admin/insights/page.tsx` — `'use client'` page with period toggle (quarter/fy), auto-refresh every 60s, Export PDF button; CSS-only charts (no new dependencies)
+- `app/admin/layout.tsx` — added Insights nav entry (second position) + bar-chart SVG icon
+- `app/globals-redesign.css` — ~250 lines of insights-specific styles appended
+
+**Data quality fix:**
+- All route queries filter `user: { isActive: true }` — blocks E2E test account (`sensei.e2e@test.com`) and inactive users from inflating metrics
+- Root cause: inactive account had 98 of 160 FY meetings
+
+### Test state
+- Unit/API tests: **2989 passing · 0 failing (242 files)**
+- TypeScript: **clean**
+
+### What's Next
+- Apply UserActivity schema to RDS (`npx prisma db push` via tunnel)
+- Test read-only sharing end-to-end on prod
+- Sonali + Andre POC walkthrough (May 7)
+
+---
+
+## Session: May 6, 2026 — Unified Virtual Desk + MCP Inbox Routing
+
+### What was done
+
+**Unified Virtual Desk (Inbox + Outbox tabs):**
+- `components/VirtualDeskPage.tsx` — Rewrote to combine VD transcript inbox (unmatched Gong/Zoom meetings) with MCP multi-source inbox into one "Virtual Desk" page. Two main tabs: **Inbox** (sub-tabs: pending/assigned/dismissed) and **Outbox** (SFDC field approval queue). Pending sub-tab shows both VD transcript items and MCP signals side by side. VD items have triage dropdown (accounts+opps); MCP items have assign dropdown (accounts) + Dismiss action.
+- `components/Sidebar.tsx` — Removed standalone `inbox` nav item. Added combined pending badge on `virtualdesk` nav: `vdPendingCount = pendingInbox.length + vdInboxItems.length`.
+- `lib/queries.ts` — Cross-invalidated both `['inbox']` and `['virtualdesk', 'inbox']` cache keys on all relevant mutations.
+
+**MCP auto-assignment scoring (`lib/mcp-tools.ts`):**
+- `add_to_inbox` tool now scores `accountHint` against all org account nodes: exact match=100, bidirectional substring=80. Auto-assigns (`status='assigned'`) when score ≥ 75; otherwise stays `pending`.
+
+**Calendar orphan routing (`lib/calendar-sync.ts`):**
+- Events with no auto-matched parent (confidence < `CALENDAR_AUTO_PARENT_CONFIDENCE`) now create an `InboxItem` with `source='calendar'` for manual triage. Low-confidence account hint (≥40) pre-populates `accountId` for faster triage.
+
+**Tests:**
+- `__tests__/components/VirtualDeskPage.test.tsx` — 10 tests covering all new unified inbox behavior
+- `__tests__/components/Sidebar.test.tsx` — 10 tests covering combined badge logic and inbox nav removal
+
+### Test state
+- Unit/API tests: **3043 passing · 0 failing**
+- TypeScript: **clean**
+
+### What's Next
+- Apply UserActivity schema to RDS (`npx prisma db push` via tunnel)
+- Test read-only sharing end-to-end on prod
+- Sonali + Andre POC walkthrough (May 7)
+
+---
+
+## Session: May 7, 2026 — MCP → API Route Architecture Refactor
+
+### What was done
+
+**Root motivation:** MCP server must work for other SE machines connecting to `okta.se-n-sei.com/api/mcp`. Direct Prisma calls in `lib/mcp-tools.ts` bypassed `verifyNotebookAccess`/`verifyNotebookEditAccess` share permissions — any org member could access any node regardless of sharing settings.
+
+**New files:**
+- `lib/service-fetch.ts` — Thin fetch wrapper injecting service auth headers (`x-service-token`, `x-service-user-id`, `x-service-org-id`) for internal API-to-API calls
+- `app/api/notebook/[id]/children/route.ts` — `GET` returns child nodes by type; `?expand=true&type=meeting` walks account→opp→meeting for cross-account meeting lists
+- `app/api/notebook/[id]/analysis-result/route.ts` — `POST` extracted from `write_analysis_result` tool; full upsert logic for com/three_whys/state/meeting/poc analysis types; fires AIJob notification
+
+**Modified files:**
+- `lib/auth-helpers.ts` — Added third auth path: service token (`AGENT_CRON_SECRET`) + `x-service-user-id`/`x-service-org-id` headers. All internal service calls now flow through full permission checks.
+- `app/api/inbox/route.ts` — Added `POST` handler extracted from `add_to_inbox` tool; includes fuzzy account-hint matching (exact=100, substring=80, threshold≥75)
+- `lib/mcp-tools.ts` — 13 tool cases now use `serviceFetch` instead of direct Prisma: `get_account`, `create_account`, `list_opportunities` (with accountId), `get_opportunity`, `create_opportunity`, `list_meetings` (with accountId), `get_meeting` (hybrid: API for access, Prisma for actionItems), `create_meeting`, `update_meeting`, `list_contacts`, `add_to_inbox`, `list_inbox`, `assign_inbox_item`, `write_analysis_result`. Remaining direct Prisma: search_accounts, org-wide list_opportunities/list_meetings, list_pipeline, create_card, get_poc_context, get_pipeline_summary, list_open_pocs, get_analysis_context.
+- `__tests__/mocks/handlers.ts` — Added MSW handler for `POST /api/notebook/:nodeId/analysis-result`
+- `__tests__/api/mcp-analysis-tools.test.ts` — Updated `write_analysis_result` describe block: removed Prisma mocks, switched to MSW HTTP handler assertions
+
+### Test state
+- Unit/API tests: **25/25 MCP tests passing · TypeScript clean**
+- Full suite not re-run (only MCP-specific tests verified)
+
+### What's Next
+- Apply UserActivity schema to RDS (`npx prisma db push` via tunnel)
+- Test read-only sharing end-to-end on prod
+- Sonali + Andre POC walkthrough (May 7)
+
+---
+
+## Session: May 17, 2026 — Remove All In-App AI Buttons / "Run via Claude Code" Treatment
+
+### What was done
+
+**Root cause:** LiteLLM proxy (`llm.atko.ai`) is IP-restricted to Okta internal network. ECS prod (`okta.se-n-sei.com`) cannot reach it, so all in-app AI trigger buttons fail silently. Solution: remove all AI trigger logic app-wide and replace with static "RUN VIA CLAUDE CODE" hints showing MCP tool instructions.
+
+**Files modified:**
+
+- `components/OpportunityAIPanel.tsx` — Full rewrite. Removed all AI trigger logic. Added "RUN VIA CLAUDE CODE" section with 4 MCP command rows (com, three_whys, state, presales), node ID + copy button, context textarea, ChannelImportPanel.
+- `components/MeetingAIPanel.tsx` — Full rewrite (~130 lines). Removed ActionBtn, runAnalyze/runPrep/runFollowups, AIAnalysisOverlay, running/results state. Kept persona selector (saves to DB). Added "RUN VIA CLAUDE CODE" section with Meeting ID display + copy + MCP instructions.
+- `app/admin/agents/page.tsx` — Full rewrite as pure display component. 13 agents in grid with cron/via-MCP badges. Blue banner showing `run_analysis` / `bulk_run_analysis` MCP tool references.
+- `components/AccountDetail.tsx` — Removed `useRunAgent` hook, `handleResearch()`, Research button JSX, `agentMsg` state.
+- `components/EmailContextPanel.tsx` — Removed `useRunContextAnalysis`, Analyze button; replaced with `ctx-analyze-mcp-hint` label.
+- `components/SlackContextPanel.tsx` — Removed `useRunContextAnalysis`, Analyze button; replaced with `ctx-analyze-mcp-hint` label.
+- `components/DriveContextPanel.tsx` — Removed `useRunContextAnalysis`, Analyze button; replaced with `ctx-analyze-mcp-hint` label.
+- `components/AttachmentsPanel.tsx` — Removed `useAnalyzeAttachment`, `handleAnalyze()`, `canAnalyze()`, `analyzingId`/`analyzeError` state, Analyze button JSX. Removed `.atp-action-analyze` CSS rules.
+- `app/globals-redesign.css` — Added `.ctx-analyze-mcp-hint` style (indigo, 11px, semi-bold).
+- `__tests__/components/MeetingAIPanel.test.tsx` — Updated: removed stale AIAnalysisOverlay mock, added `useNotebookNodeDetail` mock, replaced 2 stale Analyze button tests with 2 tests for new "RUN VIA CLAUDE CODE" section.
+
+### Test state
+- Unit/API tests: **3096 passing · 7 failing** (same 7 pre-existing API transcript-validation failures — unrelated to our changes)
+- TypeScript: **clean**
+
+### What's Next
+- Commit + push to `govindjiwalashantanu/sensei-webapp` main → ECS deploy
+- Consider removing the dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts` to reduce bundle size
+
+---
+
+## Session: May 17, 2026 — Restore AI Buttons with "Run via Claude Code" Modal Treatment
+
+### What was done
+
+**Root cause recap:** LiteLLM still IP-restricted; ECS can't reach it. Rather than static hints, the new approach restores all buttons but clicking one opens a popup modal (MCPCommandModal) showing: (1) a pre-filled, one-click-copyable MCP command with node ID baked in, (2) the AI prompt that will run, (3) the context being sent.
+
+**Files modified:**
+
+- `lib/mcp-tools.ts` — Extended `run_analysis` from 4 types to 14. Split ROUTE_MAP into `NOTEBOOK_ROUTE_MAP` (nodeId in URL path) and `AGENT_ROUTE_MAP` (nodeId in request body). New notebook types: `elevator_pitch`, `bv`, `poc_extract`, `meeting_analyze`, `meeting_prep`, `meeting_followups`. New agent types: `techqual` → `/api/agent/tech-qual`, `research` → `/api/agent/research`, `stakeholders` → `/api/agent/stakeholder-map`, `next_actions` → `/api/agent/next-action`. Extended `bulk_run_analysis` with same split.
+
+- `components/MCPCommandModal.tsx` — New reusable modal. Props: `isOpen`, `onClose`, `title`, `description`, `command`, `promptPreview`, `contextSummary`. Three sections: (1) command monospace box + Copy button, (2) prompt description, (3) context summary. Footer: Copy Command + Close. Escape key handler.
+
+- `components/ClaudeCodeTooltip.tsx` — New `?` icon with click-to-toggle popover. Explains what Claude Code is + 3 numbered steps (open terminal → run `claude` → paste command). Click-outside dismissal.
+
+- `components/OpportunityAIPanel.tsx` — Full rewrite. Restored 12 AI buttons in 4 groups (Messaging & Strategy, Technical, POC & Business Value, Account Intelligence). Each button opens MCPCommandModal with node ID baked into command. ClaudeCodeTooltip in header. Kept context inventory, expandable context textarea, ChannelImportPanel.
+
+- `components/MeetingAIPanel.tsx` — Full rewrite. Restored 3 AI buttons: Analyze Transcript, Generate Meeting Prep, Generate Follow-ups. Each opens MCPCommandModal. ClaudeCodeTooltip in header. Kept persona selector.
+
+- `components/AccountDetail.tsx` — Added "✦ Research" button next to Share. Opens MCPCommandModal with research command baked in.
+
+- `app/globals-redesign.css` — Appended: `.mcp-btn`, `.mcp-btn-sm`, `.mcp-btn-group`, `.mcp-btn-group-label`, all `.mcp-modal-*` classes, `.btn-primary`, `.btn-secondary`, all `.cc-tooltip-*` classes.
+
+**Tests:**
+
+- `__tests__/components/MCPCommandModal.test.tsx` — New: 13 tests covering render, copy, backdrop close, Escape close, context summary hide.
+- `__tests__/components/MeetingAIPanel.test.tsx` — Updated: removed stale "RUN VIA CLAUDE CODE" and node ID display tests; added 6 tests for restored buttons + modal commands.
+- `__tests__/components/OpportunityAIPanel.test.tsx` — Updated: removed stale "RUN VIA CLAUDE CODE" and MCP command tests; added tests for button groups, modal commands, transcript/signal counts.
+
+### Test state
+- Unit/API tests: **3116 passing · 7 failing** (same 7 pre-existing API transcript-validation failures)
+- TypeScript: **clean**
+
+### What's Next
+- Commit + push to `govindjiwalashantanu/sensei-webapp` main → ECS deploy
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts` to reduce bundle size
+
+---
+
+## Session: May 17, 2026 — Wire AI Modals to Live Org-Effective Prompts
+
+### What was done
+
+**Goal:** Ensure every MCPCommandModal shows the exact system prompt that will actually run — including per-org customizations set in Admin → Prompts.
+
+**Root cause:** MCPCommandModal was showing a static `promptPreview` string. If an org had customized a prompt via the Prompt Manager, the modal would show the wrong (default) text.
+
+**Files modified:**
+
+- `lib/prompt-defaults.ts` — Added two new prompt keys: `agent_stakeholder_map` and `meeting_prep`. Both were previously hardcoded inside their respective routes and not customizable per-org.
+
+- `app/api/agent/stakeholder-map/route.ts` — Migrated from hardcoded 20-line systemPrompt to `getPromptTemplate(user.orgId, 'agent_stakeholder_map')`. Dynamic account name and known contacts still injected at runtime.
+
+- `lib/meeting-prep.ts` — Migrated from hardcoded systemPrompt to `getPromptTemplate(orgId, 'meeting_prep')`.
+
+- `app/api/settings/prompts/[key]/route.ts` — Added new GET handler. Returns `{ key, displayName, description, systemPrompt, temperature, isCustom }` for the effective prompt (org override if exists, else default). 401 if unauthenticated, 404 if unknown key.
+
+- `components/MCPCommandModal.tsx` — Added `promptKey?: string` prop. When modal opens and `promptKey` is provided, fetches live prompt via React Query (`useQuery`) from `/api/settings/prompts/${promptKey}` (staleTime: 60s). Added collapsible "System prompt" section with: toggle button, "customized" badge (when `isCustom: true`), scrollable `<pre>` with full prompt text, copy button.
+
+- `components/OpportunityAIPanel.tsx` — Added `promptKey` field to `ButtonDef` and wired all 11 buttons with their correct prompt keys.
+
+- `components/MeetingAIPanel.tsx` — Added `promptKey` field to `MeetingButtonDef` and wired all 3 buttons.
+
+- `components/AccountDetail.tsx` — Added `promptKey="agent_research"` to the Research Account MCPCommandModal call.
+
+- `app/globals-redesign.css` — Added styles for prompt collapsible section: `.mcp-modal-prompt-toggle`, `.mcp-modal-custom-badge`, `.mcp-modal-prompt-full`, `.mcp-modal-prompt-actions`, `.mcp-modal-prompt-text`, `.mcp-modal-prompt-loading`.
+
+**Deferred:** `app/api/agent/followup/route.ts` still uses a hardcoded systemPrompt. This route is agent-triggered (not a direct user button), so left for a future pass.
+
+### Test state
+- Unit/API tests: **3119 passing · 7 failing** (same 7 pre-existing transcript-validation failures)
+- TypeScript: **clean**
+
+### What's Next
+- Push to `govindjiwalashantanu/sensei-webapp` main → ECS deploy
+- Optionally: add `agent_followup` to PROMPT_DEFAULTS and migrate `followup/route.ts`
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts`
+
+---
+
+## Session: May 17, 2026 — 5 new MCP tools + two-column MCP settings page
+
+### What was done
+
+**Goal:** Add missing MCP tools surfaced during a real agent session, and make the available tools discoverable in the Settings UI.
+
+**New MCP tools (lib/mcp-tools.ts):**
+- `search_transcripts` — full-text keyword search across all meeting transcripts; returns snippet + meeting/opp/account context. New route: `GET /api/search/transcripts`
+- `get_insights` — account-level AI insights pulling presalesNotes, CoM fields, three whys. Scoped to org. `GET /api/insights?accountId=optional`
+- `list_action_items` — all MeetingActionItems with meeting/opp/account context. Optional `?opportunityId` or `?accountId` filter. New route: `GET /api/action-items`
+- `create_contact` — create a contact anchored to an account node. `POST /api/notebook/${accountId}/contacts`
+- `get_health_score` — deal health score with breakdown + recommendations. `GET /api/notebook/${opportunityId}/health-score`
+
+**New API routes:**
+- `app/api/search/transcripts/route.ts` — keyword search with `SNIPPET_RADIUS=120` context window, `insensitive` mode, max 50 results
+- `app/api/action-items/route.ts` — MeetingActionItem list with full context joins, capped at 200
+
+**MCP settings page two-column layout (components/SettingsPage.tsx McpSection):**
+- Restructured return into `display: flex` two columns
+- Left column (460px): Server URL, key reveal box, Generate form, Active keys list
+- Right column (flex: 1): Available tools panel (39 tools in 7 categories) + What's possible panel (6 MCP pairing cards: Slack, Gmail, Google Drive, Calendar, Zoom, Lucid)
+
+**Commit:** `6833931` pushed to `govindjiwalashantanu/sensei-webapp` main → ECS deploy in progress
+
+### Test state
+- TypeScript: **clean**
+
+### What's Next
+- Optionally migrate `app/api/agent/followup/route.ts` hardcoded systemPrompt to `PROMPT_DEFAULTS`
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts`
+
+---
+
+## Session: May 17, 2026 — Event-Driven Agent Automation (Full Pipeline)
+
+### What was done
+
+**Goal:** Build a complete event-driven agent automation system so Claude Code on the SE's laptop can serve as the AI compute layer — draining an analysis queue populated by MCP write tool calls.
+
+**Phase 1 — DB + API routes (prior session):**
+- 3 new Prisma models: `AnalysisDirtyFlag`, `UserAgentPreferences`, `AgentActivityLog` (+ relation fields on User/Organization)
+- 5 new API routes: `/api/agent/pending-queue`, `/api/agent/clear-flag`, `/api/agent/preferences`, `/api/agent/activity`, `/api/agent/set-flag`
+- Content gate: min 1 transcript + 200 chars before analysis queues
+- Dual auth on `set-flag`: NextAuth session OR MCP Bearer token
+- 16 new unit tests in `__tests__/api/agent.test.ts`
+
+**Phase 2 — Dirty flags wired into MCP write tools (`lib/mcp-tools.ts`):**
+- `TOOL_FLAG_MAP` constant maps each write tool to the analyses it invalidates
+- `setDirtyFlagForOpp()` direct Prisma function with merge-on-existing logic
+- 9 handlers wired: `refresh_slack_intelligence`, `add_email_context`, `add_drive_doc`, `add_lucid_diagram`, `update_meeting` (async IIFE parent lookup), `create_meeting`, `update_opportunity`, `append_presales_notes`, `find_replace_property`
+- Circular trigger guard: `write_analysis_result` not in TOOL_FLAG_MAP, never calls setDirtyFlagForOpp
+
+**Phase 3 — Claude Code skills:**
+- `~/.claude/skills/analyze-queue.md` — `/analyze-queue` skill drains full queue, checks prefs, optionally prompts user, runs analyses in sequence via `get_analysis_context` + `write_analysis_result`, clears flags, reports
+- `~/.claude/skills/run-analysis.md` — `/run-analysis <nodeId> <type>` skill for single on-demand analysis
+- Both log to `/api/agent/activity` and use `claude-opus-4-7` with adaptive thinking
+
+**Phase 4 — UI:**
+- `components/SettingsPage.tsx`: Added `'agent'` to `NavSection` type; "✦ Agent Automation" nav button; `AgentSection` component with preferences form (6 fields: autoRunOnSessionStart, promptBeforeRunning, maxOppsPerSession, minimumCharCount, analysesToAutoRun checkboxes, dealStageFilter checkboxes) + recent activity log table; "Connect Claude Code" instructions card
+- `components/AIJobBell.tsx`: Added `BellTab` state, "Agent" second tab; agent activity list fetched from `/api/agent/activity` on tab open; "Manage agent preferences →" footer link
+- `app/api/agent/activity/route.ts`: Enhanced GET to join `NotebookNode.title` and return `opportunityTitle` in each log entry
+
+**New MCP tools (`lib/mcp-tools.ts`):**
+- `get_agent_queue` — returns pending-queue for the calling user
+- `get_agent_preferences` — returns preferences for the calling user
+- `update_agent_preferences` — updates preferences for the calling user (PUT)
+- MCP_TOOL_GROUPS updated in SettingsPage: "Agent Automation" group added, badge updated to 42 tools
+
+### Test state
+- TypeScript: **clean**
+
+### What's Next
+- Push to `govindjiwalashantanu/sensei-webapp` main → ECS deploy
+- Test the full flow: add context via MCP → dirty flag set → `/analyze-queue` drains → preferences respected → activity log populated
+- Optionally migrate `app/api/agent/followup/route.ts` hardcoded systemPrompt to `PROMPT_DEFAULTS`
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts`
+
+---
+
+## Session: May 17, 2026 — Context audit completion + docs/tour refresh
+
+### What was done
+
+**Goal 1 — Complete context audit:** `lib/meeting-prep.ts` was the last LLM-calling route missing `buildFullContext`. Added it to the existing `Promise.all` alongside `getAttachmentContext`, feeding the result into the LLM prompt as an `## Additional Context (Slack / Email / Drive / Lucid)` block.
+
+**Goal 2 — Update docs and onboarding tour to match new app structure:**
+
+`components/OnboardingTour.tsx`:
+- `opportunity-tabs` step: rewrote body to cover the Sales/Presales tab split, Attachments panel with ✦ Analyze, and meeting ✦ Prep. Changed `docSlug` from `'notebook'` to `'ai-features'`.
+- `settings-team` step: rewrote body to call out MCP and Agent Automation specifically. Changed `docSlug` from `'settings'` to `'mcp-integration'`.
+
+`lib/docs-content.ts`:
+- `getting-started`: Fixed "top navigation" → "left sidebar"; added MCP and Agent Automation to Settings list item.
+- `settings`: Added Zoom to Integrations list; added full MCP section (server URL, setup instructions, ~/.claude/settings.json snippet); added full Agent Automation section (all 6 preference fields explained).
+- `ai-features`: Expanded Meeting Prep section to describe the 3 outputs + calendar auto-trigger. Added new Attachment Analysis section.
+- `agent-inbox`: Added Claude Code agent automation section before the inbox panel description (dirty flags, queue drain, skills, activity log).
+- New `mcp-integration` article (slug `'mcp-integration'`, category `'AI & Automation'`): full article covering why MCP, setup, 42 tools in 7 categories, analysis queue, analysis types, security.
+
+### Test state
+- TypeScript: **clean**
+
+### What's Next
+- Push to `govindjiwalashantanu/sensei-webapp` main → ECS deploy
+- Remove dead React Query hooks (`useRunAgent`, `useRunContextAnalysis`, `useAnalyzeAttachment`) from `lib/queries.ts`
+- Migrate `app/api/agent/followup/route.ts` hardcoded systemPrompt to `PROMPT_DEFAULTS`

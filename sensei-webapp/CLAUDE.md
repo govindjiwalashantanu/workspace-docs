@@ -16,8 +16,8 @@ At the start of each session, also read:
 ## Current State
 _Update this section at the end of every session._
 
-**Last session:** May 4, 2026 — Code review cleanup: 27 findings fixed across 5 batches (magic number constants, silent catch logging, type-unsafe casts, Promise.allSettled correctness, duplicate `toMap`/`callLiteLLM` extraction)
-**Tests:** Playwright E2E: 519 passed · 203 skipped · 0 failures. Unit/API: 2979 passing · 0 failing.
+**Last session:** Jun 3, 2026 (afternoon) — Google Tasks full integration (Card.googleTaskId/googleTaskListId, push from CardModal+ActionItemModal, Google logo badges, linked-first Kanban sort); SearchableSelect sweep across all assignee pickers; action items scoped to userId (was leaking org-wide); auto-trigger cascade on manual transcript save; due date synced to Google Tasks; calendar event matching fully rewritten (4-signal priority: contact 97, domain Levenshtein 60–95, token overlap 58–80/48–62; INTERNAL_TITLE_RE guard; 673 stale entries cleared; match-helpers.ts shared lib); digest "Meetings Today" reads GoogleCalendarEventCache. **Prior session (Jun 3 morning):** AI intelligence pipeline — meeting signals, Analysis DAG, pgvector RAG (TranscriptChunk + HNSW, 2684 chunks), LLM cascade 70–80% reduction, Meeting Intelligence dashboard. **Prior:** Google Workspace MCP + persisted calendar/tasks/SFDC sync; LiteLLM NAT gateway whitelisted on ECS.
+**Tests:** Unit/API: 3116 passing · 7 failing (same 7 pre-existing transcript-validation failures). TypeScript: clean.
 **TypeScript:** Clean
 **Data models:** Contact now dedicated Prisma model (166 NotebookNodes → 74 Contact records), manualRole flag prevents agent overwrites
 **Asset hosting:** s3://sensei-assets created; 14 demo videos + Hasbro BV video (103.2s) uploaded; presigned URL + delete endpoints live
@@ -128,13 +128,15 @@ Every API route calls `requireAuth()` from `lib/auth-helpers.ts`. Client uses `a
 
 ### Authentication
 
-NextAuth v4: **Okta** (enterprise OIDC, `goals.oktapreview.com`), **Google** (OAuth + calendar scopes), **Credentials** (email/password). New Okta tenant (`sen-sei.okta.com`) provisioned via Terraform; switch in Admin → SSO/IDP.
+NextAuth v4: **Okta** (demo.okta.com Auth0 tenant — `auth.demo.okta.com`, replaces `goals.oktapreview.com`), **Google** (OAuth + calendar scopes), **Credentials** (email/password).
 
 ### Styling
 
 All styles in `app/globals-redesign.css`. Do not create additional CSS files or CSS modules.
 
 ### AI Services
+
+> **LiteLLM access:** ECS NAT gateway (`52.206.25.250`) is whitelisted at `llm.atko.ai` as of Jun 2026. Server-side LLM calls work from ECS. All AI analysis routes call LiteLLM directly. MCP tool handlers (`lib/mcp-tools.ts`) should still remain data/tool-only — keep LLM calls in dedicated API routes, not inside MCP handlers.
 
 All LLM calls are **server-side only** via `llm.atko.ai` (IP-restricted to Okta network). Full infra/proxy options: see `DEPLOY.md`.
 
@@ -183,7 +185,7 @@ All secrets are stored as Vercel environment variables — never in git.
 
 ## Deployment
 
-Production: AWS ECS Fargate — `okta.se-n-sei.com`. Deploy: push to `main` → GitHub Actions → ECR → force ECS redeploy.
+Production: AWS ECS Fargate — `sensei.oktademo.app`. Deploy: push to `main` → GitHub Actions → ECR → force ECS redeploy.
 Static IP: `52.206.25.250` (NAT Gateway, whitelisted at llm.atko.ai). Full infra IDs, cron schedules, and proxy options: see `DEPLOY.md`.
 
 ---
